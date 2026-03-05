@@ -477,7 +477,6 @@ function renderOutput(rawContent) {
 function unescapeNewlines(str) {
   // Replace literal backslash-n sequences with real newlines
   // Only if the string doesn't already contain real newlines (model-dependent)
-  if (str.includes('\n')) return str;
   return str.replace(/\\n/g, '\n');
 }
 
