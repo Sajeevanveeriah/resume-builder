@@ -1,56 +1,52 @@
-# Resume Tailor
+# ResumeAI (Local-Only Transformers.js Resume Tailoring)
 
-Resume Tailor is a fully client-side web application that generates ATS-optimised resumes and cover letters tailored to a specific job advertisement. Paste your existing resume, paste a job description, supply your OpenAI API key, and the app calls GPT-4o with a specialist Australian resume-writing prompt to produce a keyword-matched resume and a concise, direct cover letter — all in your browser, with no server, no sign-up, and no data ever leaving your machine except for the single API call to OpenAI.
+ResumeAI is a fully client-side web app that tailors a resume and drafts a matching cover letter from a job description.
 
-## Setup
+## What the app does
 
-### 1. Get an OpenAI API key
+- Loads an AI model directly in your browser with **Transformers.js**.
+- Uses **Xenova/Phi-3-mini-4k-instruct** for local generation.
+- Runs model inference inside a **Web Worker** so the UI stays responsive.
+- Accepts your resume text by paste or PDF upload (parsed locally with pdf.js).
+- Accepts a target job description and generates:
+  - an ATS-friendly tailored resume
+  - a matching cover letter
+- Streams output live and splits the two documents using a separator.
+- Lets you copy or download each output as `.txt`.
 
-Visit [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys), create an account if needed, and generate a new secret key. Keep it safe — you'll paste it into the app sidebar.
+## Privacy and local processing
 
-### 2. Run locally
+- The AI runs entirely in your browser via WebAssembly.
+- No backend server is used.
+- No API keys are required.
+- No external AI service calls are made.
+- Resume/job data stays on your device.
 
-```bash
-git clone https://github.com/<your-username>/resume-tailor.git
-cd resume-tailor
-```
+## Browser requirements
 
-Open `index.html` directly in your browser:
+Works in all modern browsers that support WebAssembly, including:
 
-- **macOS:** `open index.html`
-- **Windows:** Double-click `index.html` in Explorer
-- **Linux:** `xdg-open index.html`
+- Chrome
+- Firefox
+- Safari
+- Edge
 
-No build step, no `npm install`, no server required.
+## First-load model download
 
-### 3. Deploy to GitHub Pages
+On first run, the app downloads the model (~400MB). This may take several minutes depending on your network.
 
-1. Push the repository to GitHub.
-2. Go to **Settings → Pages**.
-3. Under **Source**, select the branch (`main` or `master`) and set the folder to `/ (root)`.
-4. Save. GitHub will publish the app at `https://<your-username>.github.io/<repo-name>/`.
+- A top progress bar shows download/loading status.
+- Model files are cached by the browser for future visits.
 
-The app works identically on `file://` and `https://` — there is no server-side component.
+## Deploy to GitHub Pages
 
-## Usage
+1. Push this repository to GitHub.
+2. In repository settings, open **Pages**.
+3. Set source to the `main` branch (root).
+4. Save — deployment runs automatically.
 
-1. Enter your OpenAI API key in the sidebar (saved to `localStorage` on blur).
-2. Paste your resume text into the **My Resume** textarea, or click **Upload PDF** to extract text from a PDF automatically.
-3. Click **Save** to persist your resume across sessions.
-4. Paste the full job advertisement into the **Job Description** field.
-5. Click **Tailor My Application**.
-6. Copy or download the tailored resume and cover letter from the output cards.
+No backend setup is needed.
 
-## Privacy & Security
+## Setup notes
 
-> Your OpenAI API key and resume text are stored **only in your browser's `localStorage`**. They are never transmitted to any server other than OpenAI's API endpoint (`api.openai.com`) at the moment you click **Tailor My Application**. No analytics, no tracking, no third-party services receive your data.
-
-## Dependencies (CDN only)
-
-| Library | Purpose | CDN |
-|---|---|---|
-| pdf.js 4.0.379 | Client-side PDF text extraction | cdnjs.cloudflare.com |
-| JetBrains Mono | Output typography | Google Fonts |
-| Inter | UI typography | Google Fonts |
-
-All dependencies load from public CDNs. No `node_modules`, no `package.json`.
+`transformers.min.js` is vendored in the repository. No CDN dependency at runtime. To update the model library, replace this file with a newer build from jsDelivr (package `@xenova/transformers`).
