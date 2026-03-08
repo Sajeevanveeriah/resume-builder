@@ -559,17 +559,21 @@ const elSidebar        = document.getElementById('sidebar');
 
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
 
-function updateGenerateButton() {
-  elGenerateBtn.disabled = !elResumeTextarea.value.trim() || !elJdTextarea.value.trim();
+function updateButtonState() {
+  const hasResume = elResumeTextarea.value.trim().length > 0;
+  const hasJD = elJdTextarea.value.trim().length > 0;
+  elGenerateBtn.disabled = !(hasResume && hasJD);
 }
 
 function showError(message) {
-  elErrorMessage.textContent = message || 'An unexpected error occurred. Check your resume format.';
-  elErrorArea.hidden = false;
+  if (!message || message.trim().length === 0) return;
+  elErrorMessage.textContent = message;
+  elErrorArea.style.display = 'flex';
 }
 
 function hideError() {
-  elErrorArea.hidden = true;
+  elErrorArea.style.display = 'none';
+  elErrorMessage.textContent = '';
 }
 
 function downloadText(text, filename) {
@@ -584,8 +588,8 @@ function downloadText(text, filename) {
 
 // ─── Event Listeners ──────────────────────────────────────────────────────────
 
-elResumeTextarea.addEventListener('input', updateGenerateButton);
-elJdTextarea.addEventListener('input', updateGenerateButton);
+elResumeTextarea.addEventListener('input', updateButtonState);
+elJdTextarea.addEventListener('input', updateButtonState);
 
 elGenerateBtn.addEventListener('click', () => {
   hideError();
@@ -602,24 +606,23 @@ elGenerateBtn.addEventListener('click', () => {
   const resumeOutput = result.resume;
   const coverLetterOutput = result.coverLetter;
 
+  elResumePre.textContent = resumeOutput;
+  elCoverPre.textContent = coverLetterOutput;
+
   if (!resumeOutput || resumeOutput.trim().length < 50) {
     showError('Could not parse your resume. Ensure it contains identifiable sections: work experience, education, or skills. Plain text or PDF paste works best.');
+    elOutputArea.style.display = 'none';
     return;
   }
 
   if (!coverLetterOutput || coverLetterOutput.trim().length < 50) {
     showError('Cover letter could not be generated. Check that your resume includes at least one work experience entry.');
+    elOutputArea.style.display = 'none';
     return;
   }
 
-  elResumePre.textContent = resumeOutput;
-  elCoverPre.textContent = coverLetterOutput;
-
-  if (elOutputArea.hidden) {
-    elOutputArea.hidden = false;
-    elOutputArea.classList.add('visible');
-  }
-
+  elOutputArea.style.display = 'flex';
+  elOutputArea.classList.add('visible');
   elOutputArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
@@ -642,7 +645,7 @@ elClearBtn.addEventListener('click', () => {
   if (!window.confirm('Clear your saved resume? This cannot be undone.')) return;
   elResumeTextarea.value = '';
   try { localStorage.removeItem(LS_RESUME_KEY); } catch (_) {}
-  updateGenerateButton();
+  updateButtonState();
 });
 
 elUploadBtn.addEventListener('click', () => elFileInput.click());
@@ -697,9 +700,11 @@ elHamburger.addEventListener('click', () => elSidebar.classList.toggle('open'));
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 function init() {
+  elOutputArea.style.display = 'none';
+  elErrorArea.style.display = 'none';
   const saved = localStorage.getItem(LS_RESUME_KEY);
   if (saved) elResumeTextarea.value = saved;
-  updateGenerateButton();
+  updateButtonState();
 }
 
 if (document.readyState === 'loading') {
