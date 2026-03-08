@@ -1,56 +1,67 @@
-# Resume Tailor
+# ResumeAI
 
-Resume Tailor is a fully client-side web application that generates ATS-optimised resumes and cover letters tailored to a specific job advertisement. Paste your existing resume, paste a job description, supply your OpenAI API key, and the app calls GPT-4o with a specialist Australian resume-writing prompt to produce a keyword-matched resume and a concise, direct cover letter — all in your browser, with no server, no sign-up, and no data ever leaving your machine except for the single API call to OpenAI.
+ResumeAI is a complete resume tailoring web application that runs entirely in your browser. Paste your existing resume, paste a job advertisement, and the app produces an ATS-optimised tailored resume and a concise Australian-format cover letter — with zero data leaving your device.
 
-## Setup
+## How it works
 
-### 1. Get an OpenAI API key
+The AI (Phi-3-mini-4k-instruct) runs locally in your browser via [Transformers.js](https://huggingface.co/docs/transformers.js) over WebAssembly. No API keys. No backend. No external AI services. Your resume and job description never leave your machine.
 
-Visit [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys), create an account if needed, and generate a new secret key. Keep it safe — you'll paste it into the app sidebar.
+- **Resume tailoring**: Mirrors exact keywords from the job description, applies Australian formatting standards, and produces ATS-safe output.
+- **Cover letter**: Direct, confident Australian business letter format, 260–320 words, structured to map your achievements to the role.
+- **PDF upload**: Extract text from a PDF resume client-side using pdf.js — no upload to any server.
+- **Resume persistence**: Your resume text is saved to `localStorage` and pre-filled on every visit.
 
-### 2. Run locally
+## Browser compatibility
+
+Works in all modern browsers — Chrome, Firefox, Safari, Edge — with no flags or special settings required. WebAssembly is universally supported.
+
+## First-load model download
+
+On the first visit, the browser downloads the Phi-3-mini model (~400MB) from Hugging Face Hub. This is cached by the browser after the first load, so subsequent visits are instant. The progress bar shows download status in real time.
+
+## Running locally
+
+You must serve the files via a local HTTP server (not `file://`) because module workers require HTTP. Use any static server:
 
 ```bash
-git clone https://github.com/<your-username>/resume-tailor.git
-cd resume-tailor
+# Python
+python3 -m http.server 8080
+
+# Node.js (npx)
+npx serve .
+
+# Node.js (http-server)
+npx http-server -p 8080
 ```
 
-Open `index.html` directly in your browser:
+Then open `http://localhost:8080` in your browser.
 
-- **macOS:** `open index.html`
-- **Windows:** Double-click `index.html` in Explorer
-- **Linux:** `xdg-open index.html`
+## Deployment to GitHub Pages
 
-No build step, no `npm install`, no server required.
+1. Commit all files including `transformers.min.js` to your repository.
+2. Push to GitHub.
+3. Go to **Settings → Pages**, set source to the `main` branch, root folder.
+4. GitHub Pages will serve the app at `https://<username>.github.io/<repo>/`.
 
-### 3. Deploy to GitHub Pages
+**Note:** `transformers.min.js` is vendored and must be committed to the repository. It is the bundled Transformers.js library (~877KB) that the worker loads locally — no CDN calls are made for this file.
 
-1. Push the repository to GitHub.
-2. Go to **Settings → Pages**.
-3. Under **Source**, select the branch (`main` or `master`) and set the folder to `/ (root)`.
-4. Save. GitHub will publish the app at `https://<your-username>.github.io/<repo-name>/`.
+## Files
 
-The app works identically on `file://` and `https://` — there is no server-side component.
+| File | Purpose |
+|---|---|
+| `index.html` | App shell, sidebar, main area, CDN links for fonts and pdf.js |
+| `style.css` | All styles — dark sidebar, light main area, green accent |
+| `app.js` | Main UI logic, worker communication, stream parsing, PDF extraction |
+| `worker.js` | Module worker — loads Phi-3-mini, streams generated tokens |
+| `transformers.min.js` | Vendored Transformers.js library (from `@xenova/transformers`) |
 
-## Usage
+## Mock mode
 
-1. Enter your OpenAI API key in the sidebar (saved to `localStorage` on blur).
-2. Paste your resume text into the **My Resume** textarea, or click **Upload PDF** to extract text from a PDF automatically.
-3. Click **Save** to persist your resume across sessions.
-4. Paste the full job advertisement into the **Job Description** field.
-5. Click **Tailor My Application**.
-6. Copy or download the tailored resume and cover letter from the output cards.
+Append `?mock=1` to the URL to run the app without loading the AI model. Useful for UI testing and development.
 
-## Privacy & Security
+## Privacy
 
-> Your OpenAI API key and resume text are stored **only in your browser's `localStorage`**. They are never transmitted to any server other than OpenAI's API endpoint (`api.openai.com`) at the moment you click **Tailor My Application**. No analytics, no tracking, no third-party services receive your data.
-
-## Dependencies (CDN only)
-
-| Library | Purpose | CDN |
-|---|---|---|
-| pdf.js 4.0.379 | Client-side PDF text extraction | cdnjs.cloudflare.com |
-| JetBrains Mono | Output typography | Google Fonts |
-| Inter | UI typography | Google Fonts |
-
-All dependencies load from public CDNs. No `node_modules`, no `package.json`.
+No data leaves your device. The model runs entirely in your browser. The only network requests are:
+- Google Fonts (JetBrains Mono, loaded in `index.html`)
+- pdf.js from cdnjs (loaded in `index.html`)
+- The Phi-3-mini model weights from Hugging Face Hub (first load only, then cached)
