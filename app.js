@@ -115,15 +115,39 @@ function extractCompanyName(jdText) {
 
 // ─── Resume Parsing ───────────────────────────────────────────────────────────
 
-function parseResume(resumeText) {
-  const lines = resumeText.split('\n');
-  const full = resumeText;
+function parseResume(rawText) {
+  // FIX 1: Normalise PDF blob text – insert line breaks before known section headings
+  const HEADINGS = [
+    'Professional Summary', 'Summary', 'Profile', 'Objective',
+    'Key Skills', 'Skills', 'Competencies', 'Core Competencies',
+    'Professional Experience', 'Work Experience', 'Employment History',
+    'Experience', 'Education', 'Qualifications', 'Academic Background',
+    'Certifications', 'Certificates', 'Licences', 'Licenses',
+    'References', 'Referees', 'Achievements', 'Awards'
+  ];
+  let text = rawText;
+  HEADINGS.forEach(h => {
+    const pattern = new RegExp('(' + h + ')', 'gi');
+    text = text.replace(pattern, '\n\n$1');
+  });
+  // Insert line break before bullet markers that have been concatenated
+  text = text.replace(/([a-z,.])\s*[•·▪▸\-]\s*/g, '$1\n• ');
+  // Insert line break before lines that look like job title patterns (e.g. "Title | Company | ...")
+  text = text.replace(/([A-Za-z])\s+((?:[A-Z][a-z]+\s*)+\|)/g, '$1\n$2');
+  // Collapse 3+ spaces/tabs to newlines (common in PDF column extraction)
+  text = text.replace(/[ \t]{3,}/g, '\n');
+  // Normalise multiple blank lines
+  text = text.replace(/\n{3,}/g, '\n\n');
 
-  const emailM = full.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
-  const email = emailM ? emailM[0] : '';
+  const lines = text.split('\n');
+  const full = text;
 
-  const phoneM = full.match(/(?:\+?[\d][\d\s\-\(\)\.]{6,}[\d])/);
-  const phone = phoneM ? phoneM[0].trim() : '';
+  // FIX 3: Extract contact info aggressively from the full (normalised) text
+  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}/);
+  const phoneMatch = text.match(/(?:\+61|0)[0-9\s]{8,12}/);
+  const nameMatch = text.match(/^[A-Z][a-z]+(?:\s[A-Z][a-z]+)+/m);
+  const email = emailMatch ? emailMatch[0] : '';
+  const phone = phoneMatch ? phoneMatch[0].trim() : '';
 
   const linkedinM = full.match(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[\w\-]+\/?/i);
   const linkedin = linkedinM ? linkedinM[0] : '';
@@ -154,14 +178,17 @@ function parseResume(resumeText) {
     }
   }
 
-  let name = '';
-  for (const line of sections.header) {
-    const t = line.trim();
-    if (!t || t.includes('@') || t.includes('linkedin.com')) continue;
-    if (/^\+?[\d\s\-\(\)\.]{7,}$/.test(t)) continue;
-    if (t.length < 2 || t.length > 65) continue;
-    name = t;
-    break;
+  // FIX 3: Prefer regex-extracted name; fall back to header scan
+  let name = nameMatch ? nameMatch[0].trim() : '';
+  if (!name) {
+    for (const line of sections.header) {
+      const t = line.trim();
+      if (!t || t.includes('@') || t.includes('linkedin.com')) continue;
+      if (/^\+?[\d\s\-\(\)\.]{7,}$/.test(t)) continue;
+      if (t.length < 2 || t.length > 65) continue;
+      name = t;
+      break;
+    }
   }
 
   let location = '';
@@ -302,7 +329,7 @@ function parseEducationSection(lines) {
 // ─── Resume Builder ───────────────────────────────────────────────────────────
 
 function buildResume(parsed, kwResult, resumeText) {
-  if (!parsed || (!parsed.name && !(parsed.experience && parsed.experience.length))) return '';
+  if (!parsed || (!parsed.name && !(parsed.experience && parsed.experience.length) && !(parsed.skills && parsed.skills.length) && !(parsed.education && parsed.education.length))) return '';
   const { keywords } = kwResult;
   const out = [];
 
@@ -334,6 +361,16 @@ function buildResume(parsed, kwResult, resumeText) {
       if (exp.bullets.length === 0) out.push('• ' + ACTION_VERBS[0] + ' key responsibilities within the role.');
       out.push('');
     });
+  } else {
+    // FIX 5: Fallback – extract experience block from raw text when section parsing failed
+    const expMatch = resumeText.match(
+      /(?:professional\s+experience|work\s+experience|employment)[:\s]*([\s\S]*?)(?=\n\n[A-Z]|education|certif|$)/i
+    );
+    if (expMatch) {
+      out.push('WORK EXPERIENCE');
+      out.push(expMatch[1].trim());
+      out.push('');
+    }
   }
 
   if ((parsed.education || []).length > 0) {
@@ -518,17 +555,22 @@ function enforceWordLimit(text, maxWords) {
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
-function processApplication(resumeText, jdText) {
+function processApplication(rawText, jdText) {
   const kwResult = extractKeywords(jdText);
-  const parsed = parseResume(resumeText);
+  const parsed = parseResume(rawText);
 
-  if (!parsed.name && parsed.experience.length === 0) {
+  const hasMinimumContent = parsed.name
+    || (parsed.experience && parsed.experience.length > 0)
+    || (parsed.skills && parsed.skills.length > 0)
+    || (parsed.education && parsed.education.length > 0)
+    || rawText.trim().length > 200;
+  if (!hasMinimumContent) {
     return {
-      error: 'Could not recognise your resume. Please ensure it contains your name and work experience, then try again.',
+      error: 'Could not recognise your resume. Ensure it contains work experience, skills, or education sections, then try again.',
     };
   }
 
-  const resumeOutput = buildResume(parsed, kwResult, resumeText);
+  const resumeOutput = buildResume(parsed, kwResult, rawText);
   console.error('[ResumeAI] buildResume output length:', resumeOutput.length);
   const coverLetterOutput = buildCoverLetter(parsed, kwResult, jdText);
   console.error('[ResumeAI] buildCoverLetter output length:', coverLetterOutput.length);
