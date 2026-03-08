@@ -557,19 +557,28 @@ const elFileInput      = document.getElementById('file-input');
 const elHamburger      = document.getElementById('hamburger-btn');
 const elSidebar        = document.getElementById('sidebar');
 
+const errorBanner      = elErrorArea;
+const outputSection    = elOutputArea;
+const elJDTextarea     = elJdTextarea;
+const elCoverLetterPre = elCoverPre;
+
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
 
-function updateGenerateButton() {
-  elGenerateBtn.disabled = !elResumeTextarea.value.trim() || !elJdTextarea.value.trim();
+function updateButtonState() {
+  const ok = elResumeTextarea.value.trim().length > 0
+           && elJDTextarea.value.trim().length > 0;
+  elGenerateBtn.disabled = !ok;
 }
 
-function showError(message) {
-  elErrorMessage.textContent = message || 'An unexpected error occurred. Check your resume format.';
-  elErrorArea.hidden = false;
+function showError(msg) {
+  if (!msg || !msg.trim()) return;
+  errorBanner.textContent = msg;
+  errorBanner.style.display = 'flex';
 }
 
 function hideError() {
-  elErrorArea.hidden = true;
+  errorBanner.style.display = 'none';
+  errorBanner.textContent = '';
 }
 
 function downloadText(text, filename) {
@@ -583,9 +592,6 @@ function downloadText(text, filename) {
 }
 
 // ─── Event Listeners ──────────────────────────────────────────────────────────
-
-elResumeTextarea.addEventListener('input', updateGenerateButton);
-elJdTextarea.addEventListener('input', updateGenerateButton);
 
 elGenerateBtn.addEventListener('click', () => {
   hideError();
@@ -602,25 +608,18 @@ elGenerateBtn.addEventListener('click', () => {
   const resumeOutput = result.resume;
   const coverLetterOutput = result.coverLetter;
 
+  elResumePre.textContent = resumeOutput || '';
+  elCoverLetterPre.textContent = coverLetterOutput || '';
+
   if (!resumeOutput || resumeOutput.trim().length < 50) {
-    showError('Could not parse your resume. Ensure it contains identifiable sections: work experience, education, or skills. Plain text or PDF paste works best.');
+    showError('Could not parse your resume. Ensure it contains work experience, education, or skills sections.');
+    outputSection.style.display = 'none';
     return;
   }
+  hideError();
+  outputSection.style.display = 'block';
 
-  if (!coverLetterOutput || coverLetterOutput.trim().length < 50) {
-    showError('Cover letter could not be generated. Check that your resume includes at least one work experience entry.');
-    return;
-  }
-
-  elResumePre.textContent = resumeOutput;
-  elCoverPre.textContent = coverLetterOutput;
-
-  if (elOutputArea.hidden) {
-    elOutputArea.hidden = false;
-    elOutputArea.classList.add('visible');
-  }
-
-  elOutputArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 elSaveBtn.addEventListener('click', () => {
@@ -642,7 +641,7 @@ elClearBtn.addEventListener('click', () => {
   if (!window.confirm('Clear your saved resume? This cannot be undone.')) return;
   elResumeTextarea.value = '';
   try { localStorage.removeItem(LS_RESUME_KEY); } catch (_) {}
-  updateGenerateButton();
+  updateButtonState();
 });
 
 elUploadBtn.addEventListener('click', () => elFileInput.click());
@@ -665,7 +664,7 @@ elFileInput.addEventListener('change', async (e) => {
       text += content.items.map(item => item.str).join(' ') + '\n';
     }
     elResumeTextarea.value = text.trim();
-    updateGenerateButton();
+    updateButtonState();
   } catch (err) {
     showError('Failed to read PDF. Try pasting your resume text manually. (' + (err.message || String(err)) + ')');
   }
@@ -699,7 +698,13 @@ elHamburger.addEventListener('click', () => elSidebar.classList.toggle('open'));
 function init() {
   const saved = localStorage.getItem(LS_RESUME_KEY);
   if (saved) elResumeTextarea.value = saved;
-  updateGenerateButton();
+
+  outputSection.style.display = 'none';
+  errorBanner.style.display = 'none';
+
+  elResumeTextarea.addEventListener('input', updateButtonState);
+  elJDTextarea.addEventListener('input', updateButtonState);
+  updateButtonState();
 }
 
 if (document.readyState === 'loading') {
