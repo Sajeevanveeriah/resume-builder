@@ -557,23 +557,28 @@ const elFileInput      = document.getElementById('file-input');
 const elHamburger      = document.getElementById('hamburger-btn');
 const elSidebar        = document.getElementById('sidebar');
 
+const errorBanner      = elErrorArea;
+const outputSection    = elOutputArea;
+const elJDTextarea     = elJdTextarea;
+const elCoverLetterPre = elCoverPre;
+
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
 
 function updateButtonState() {
-  const hasResume = elResumeTextarea.value.trim().length > 0;
-  const hasJD = elJdTextarea.value.trim().length > 0;
-  elGenerateBtn.disabled = !(hasResume && hasJD);
+  const ok = elResumeTextarea.value.trim().length > 0
+           && elJDTextarea.value.trim().length > 0;
+  elGenerateBtn.disabled = !ok;
 }
 
-function showError(message) {
-  if (!message || message.trim().length === 0) return;
-  elErrorMessage.textContent = message;
-  elErrorArea.style.display = 'flex';
+function showError(msg) {
+  if (!msg || !msg.trim()) return;
+  errorBanner.textContent = msg;
+  errorBanner.style.display = 'flex';
 }
 
 function hideError() {
-  elErrorArea.style.display = 'none';
-  elErrorMessage.textContent = '';
+  errorBanner.style.display = 'none';
+  errorBanner.textContent = '';
 }
 
 function downloadText(text, filename) {
@@ -587,9 +592,6 @@ function downloadText(text, filename) {
 }
 
 // ─── Event Listeners ──────────────────────────────────────────────────────────
-
-elResumeTextarea.addEventListener('input', updateButtonState);
-elJdTextarea.addEventListener('input', updateButtonState);
 
 elGenerateBtn.addEventListener('click', () => {
   hideError();
@@ -606,24 +608,18 @@ elGenerateBtn.addEventListener('click', () => {
   const resumeOutput = result.resume;
   const coverLetterOutput = result.coverLetter;
 
-  elResumePre.textContent = resumeOutput;
-  elCoverPre.textContent = coverLetterOutput;
+  elResumePre.textContent = resumeOutput || '';
+  elCoverLetterPre.textContent = coverLetterOutput || '';
 
   if (!resumeOutput || resumeOutput.trim().length < 50) {
-    showError('Could not parse your resume. Ensure it contains identifiable sections: work experience, education, or skills. Plain text or PDF paste works best.');
-    elOutputArea.style.display = 'none';
+    showError('Could not parse your resume. Ensure it contains work experience, education, or skills sections.');
+    outputSection.style.display = 'none';
     return;
   }
+  hideError();
+  outputSection.style.display = 'block';
 
-  if (!coverLetterOutput || coverLetterOutput.trim().length < 50) {
-    showError('Cover letter could not be generated. Check that your resume includes at least one work experience entry.');
-    elOutputArea.style.display = 'none';
-    return;
-  }
-
-  elOutputArea.style.display = 'flex';
-  elOutputArea.classList.add('visible');
-  elOutputArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 elSaveBtn.addEventListener('click', () => {
@@ -668,7 +664,7 @@ elFileInput.addEventListener('change', async (e) => {
       text += content.items.map(item => item.str).join(' ') + '\n';
     }
     elResumeTextarea.value = text.trim();
-    updateGenerateButton();
+    updateButtonState();
   } catch (err) {
     showError('Failed to read PDF. Try pasting your resume text manually. (' + (err.message || String(err)) + ')');
   }
@@ -700,10 +696,14 @@ elHamburger.addEventListener('click', () => elSidebar.classList.toggle('open'));
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 function init() {
-  elOutputArea.style.display = 'none';
-  elErrorArea.style.display = 'none';
   const saved = localStorage.getItem(LS_RESUME_KEY);
   if (saved) elResumeTextarea.value = saved;
+
+  outputSection.style.display = 'none';
+  errorBanner.style.display = 'none';
+
+  elResumeTextarea.addEventListener('input', updateButtonState);
+  elJDTextarea.addEventListener('input', updateButtonState);
   updateButtonState();
 }
 
