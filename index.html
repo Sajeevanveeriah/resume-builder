@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ResumeAI — Tailored Applications, No Data Shared</title>
+  <title>ResumeAI — Instant Resume Tailoring</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11,17 +11,17 @@
 </head>
 <body>
 
-  <!-- Sidebar -->
+  <!-- ── Sidebar ── -->
   <aside class="sidebar" id="sidebar" aria-label="Resume panel">
     <div class="sidebar-inner">
 
       <div class="sidebar-logo">
         <span class="logo-name">ResumeAI</span>
-        <span class="logo-badge">Runs locally, no data shared</span>
+        <span class="logo-badge">Free, runs in your browser</span>
       </div>
 
-      <section class="sidebar-section" aria-labelledby="resume-section-heading">
-        <h2 class="section-label" id="resume-section-heading">My Resume</h2>
+      <section class="sidebar-section" aria-labelledby="resume-heading">
+        <h2 class="section-label" id="resume-heading">My Resume</h2>
         <textarea
           id="resume-textarea"
           class="sidebar-textarea"
@@ -31,16 +31,16 @@
         ></textarea>
         <div class="resume-actions">
           <button id="upload-btn" class="btn btn-sm btn-secondary" type="button" aria-label="Upload PDF resume">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/>
               <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
             Upload PDF
           </button>
-          <input type="file" id="file-input" accept=".pdf" class="visually-hidden" aria-label="PDF file input" tabindex="-1">
+          <input type="file" id="file-input" accept=".pdf" class="visually-hidden" tabindex="-1" aria-label="PDF file input">
           <button id="save-btn" class="btn btn-sm btn-secondary" type="button">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
               <polyline points="17 21 17 13 7 13 7 21"/>
               <polyline points="7 3 7 8 15 8"/>
@@ -48,7 +48,7 @@
             Save
           </button>
           <button id="clear-btn" class="btn btn-sm btn-ghost btn-danger" type="button">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <polyline points="3 6 5 6 21 6"/>
               <path d="M19 6l-1 14H6L5 6"/>
               <path d="M10 11v6M14 11v6"/>
@@ -60,51 +60,21 @@
       </section>
 
       <footer class="sidebar-footer">
-        <a
-          href="https://huggingface.co/docs/transformers.js"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="footer-link"
-        >Powered by Transformers.js + Phi-3-mini</a>
+        <p class="footer-note">No AI model. No data sent anywhere. Instant results.</p>
       </footer>
 
     </div>
   </aside>
 
-  <!-- Main content -->
+  <!-- ── Main content ── -->
   <main class="main">
 
-    <!-- Mobile hamburger -->
     <button class="hamburger-btn" id="hamburger-btn" type="button" aria-label="Toggle sidebar" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
 
     <div class="main-inner">
 
-      <!-- One-time notice banner -->
-      <div id="notice-banner" class="notice-banner" hidden role="note">
-        <p>This app runs AI entirely in your browser using WebAssembly. No data leaves your device. The model (~400MB) is cached after the first load.</p>
-        <button id="notice-dismiss" class="notice-dismiss" type="button" aria-label="Dismiss notice">&#x2715;</button>
-      </div>
-
-      <!-- Mock mode banner (non-dismissible) -->
-      <div id="mock-banner" class="mock-banner" hidden role="status">
-        Mock mode active. AI generation is simulated.
-      </div>
-
-      <!-- Model loading progress -->
-      <div id="progress-area" class="progress-area" role="status" aria-live="polite" aria-label="Model loading progress">
-        <div class="progress-header">
-          <span id="progress-label" class="progress-label-text">Loading AI model to your browser (first time only, ~400MB)</span>
-          <span id="ready-indicator" class="ready-indicator" style="display:none" aria-label="AI ready"></span>
-        </div>
-        <div class="progress-bar-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
-          <div id="progress-bar-fill" class="progress-bar-fill"></div>
-        </div>
-        <span id="progress-status" class="progress-status"></span>
-      </div>
-
-      <!-- Job description -->
       <section class="jd-section" aria-labelledby="jd-label">
         <label class="field-label" for="jd-textarea" id="jd-label">Job Description</label>
         <textarea
@@ -116,7 +86,6 @@
         ></textarea>
       </section>
 
-      <!-- Generate button -->
       <div class="action-row">
         <button
           id="generate-btn"
@@ -129,34 +98,30 @@
         </button>
       </div>
 
-      <!-- Error area -->
       <div id="error-area" class="error-area" hidden role="alert" aria-live="assertive">
         <div class="error-content">
           <span id="error-message" class="error-message"></span>
         </div>
         <div class="error-actions">
-          <button id="error-retry" class="btn btn-sm btn-secondary" type="button" style="display:none">Retry</button>
           <button id="error-dismiss" class="btn-dismiss" type="button" aria-label="Dismiss error">&#x2715;</button>
         </div>
       </div>
 
-      <!-- Output area -->
       <div id="output-area" class="output-area" hidden>
 
-        <!-- Tailored Resume card -->
         <article class="output-card" aria-labelledby="resume-card-title">
           <div class="card-header">
             <h2 class="card-title" id="resume-card-title">Tailored Resume</h2>
             <div class="card-actions">
-              <button id="resume-copy" class="btn btn-sm btn-secondary" type="button" disabled aria-label="Copy resume to clipboard">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <button id="resume-copy" class="btn btn-sm btn-secondary" type="button" aria-label="Copy resume">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                 </svg>
                 Copy
               </button>
-              <button id="resume-download" class="btn btn-sm btn-secondary" type="button" disabled aria-label="Download resume as text file">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <button id="resume-download" class="btn btn-sm btn-secondary" type="button" aria-label="Download resume as text file">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
                   <line x1="12" y1="15" x2="12" y2="3"/>
@@ -165,23 +130,22 @@
               </button>
             </div>
           </div>
-          <pre id="resume-output" class="output-pre" aria-label="Tailored resume content" aria-live="polite"></pre>
+          <pre id="resume-output" class="output-pre" aria-label="Tailored resume"></pre>
         </article>
 
-        <!-- Cover Letter card -->
         <article class="output-card" aria-labelledby="cover-card-title">
           <div class="card-header">
             <h2 class="card-title" id="cover-card-title">Cover Letter</h2>
             <div class="card-actions">
-              <button id="cover-copy" class="btn btn-sm btn-secondary" type="button" disabled aria-label="Copy cover letter to clipboard">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <button id="cover-copy" class="btn btn-sm btn-secondary" type="button" aria-label="Copy cover letter">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                 </svg>
                 Copy
               </button>
-              <button id="cover-download" class="btn btn-sm btn-secondary" type="button" disabled aria-label="Download cover letter as text file">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <button id="cover-download" class="btn btn-sm btn-secondary" type="button" aria-label="Download cover letter as text file">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
                   <line x1="12" y1="15" x2="12" y2="3"/>
@@ -190,7 +154,7 @@
               </button>
             </div>
           </div>
-          <pre id="cover-output" class="output-pre" aria-label="Cover letter content" aria-live="polite"></pre>
+          <pre id="cover-output" class="output-pre" aria-label="Cover letter"></pre>
         </article>
 
       </div><!-- /output-area -->
@@ -198,9 +162,8 @@
     </div><!-- /main-inner -->
   </main>
 
-  <!-- pdf.js from CDN (v3.11.174, exposes global pdfjsLib) -->
+  <!-- pdf.js from CDN (v3.11.174) — exposes global pdfjsLib -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
-  <script type="module" src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
