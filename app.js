@@ -302,11 +302,12 @@ function parseEducationSection(lines) {
 // ─── Resume Builder ───────────────────────────────────────────────────────────
 
 function buildResume(parsed, kwResult, resumeText) {
+  if (!parsed || (!parsed.name && !(parsed.experience && parsed.experience.length))) return '';
   const { keywords } = kwResult;
   const out = [];
 
   out.push(parsed.name || 'Your Name');
-  const contact = [parsed.email, parsed.phone, parsed.location].filter(Boolean).join(' | ');
+  const contact = [parsed.email || '', parsed.phone || '', parsed.location || ''].filter(Boolean).join(' | ');
   if (contact) out.push(contact);
   if (parsed.linkedin) out.push(parsed.linkedin);
   out.push('');
@@ -324,7 +325,7 @@ function buildResume(parsed, kwResult, resumeText) {
     out.push('');
   }
 
-  if (parsed.experience.length > 0) {
+  if ((parsed.experience || []).length > 0) {
     out.push('WORK EXPERIENCE');
     parsed.experience.forEach(exp => {
       const header = [exp.title, exp.company, exp.location, exp.dates].filter(Boolean).join(' | ');
@@ -335,7 +336,7 @@ function buildResume(parsed, kwResult, resumeText) {
     });
   }
 
-  if (parsed.education.length > 0) {
+  if ((parsed.education || []).length > 0) {
     out.push('EDUCATION');
     parsed.education.forEach(edu => {
       out.push([edu.degree, edu.institution, edu.year].filter(Boolean).join(' | '));
@@ -343,7 +344,7 @@ function buildResume(parsed, kwResult, resumeText) {
     out.push('');
   }
 
-  if (parsed.certifications.length > 0) {
+  if ((parsed.certifications || []).length > 0) {
     out.push('CERTIFICATIONS');
     parsed.certifications.forEach(c => out.push(c));
     out.push('');
@@ -352,7 +353,11 @@ function buildResume(parsed, kwResult, resumeText) {
   out.push('REFEREES');
   out.push('Available upon request.');
 
-  return out.join('\n');
+  const result = out.join('\n');
+  if (result.length < 100) {
+    console.error('[ResumeAI] buildResume: output unexpectedly short. Parsed object:', parsed);
+  }
+  return result;
 }
 
 function buildSummary(parsed, keywords) {
@@ -423,6 +428,7 @@ function simpleHash(str) {
 // ─── Cover Letter Builder ─────────────────────────────────────────────────────
 
 function buildCoverLetter(parsed, kwResult, jdText) {
+  if (!parsed) return '';
   const { keywords, jobTitle, companyName } = kwResult;
   const lowerJd = jdText.toLowerCase();
 
@@ -434,12 +440,13 @@ function buildCoverLetter(parsed, kwResult, jdText) {
   const company = companyName || 'your organisation';
   const role = jobTitle || 'this position';
 
-  const skill1 = parsed.skills[0] || keywords[0] || 'professional expertise';
-  const skill2 = parsed.skills[1] || keywords[1] || 'stakeholder collaboration';
+  const allSkills = parsed.skills || [];
+  const skill1 = allSkills[0] || keywords[0] || 'professional expertise';
+  const skill2 = allSkills[1] || keywords[1] || 'stakeholder collaboration';
 
   const p1 = `I am applying for the ${role} at ${company}, a role that aligns closely with my professional background and the trajectory of my career. With a strong foundation in ${skill1} and ${skill2}, I am positioned to contribute immediately and deliver meaningful results.`;
 
-  const exps = parsed.experience.slice(0, 2);
+  const exps = (parsed.experience || []).slice(0, 2);
   const p2parts = exps.map(exp => {
     const rawBullet = exp.bullets[0] || `contributed to the objectives of ${exp.company || 'the organisation'}`;
     const verb = ACTION_VERBS[simpleHash(rawBullet) % ACTION_VERBS.length];
@@ -454,10 +461,10 @@ function buildCoverLetter(parsed, kwResult, jdText) {
   });
   const p2 = p2parts.join(' ');
 
-  const matchedSkills = parsed.skills.filter(s =>
+  const matchedSkills = allSkills.filter(s =>
     keywords.some(kw => s.toLowerCase().includes(kw) || kw.includes(s.toLowerCase()))
   );
-  const displaySkills = [...matchedSkills, ...parsed.skills.filter(s => !matchedSkills.includes(s))].slice(0, 3);
+  const displaySkills = [...matchedSkills, ...allSkills.filter(s => !matchedSkills.includes(s))].slice(0, 3);
   const skillPhrase = displaySkills.length >= 2
     ? displaySkills.slice(0, -1).join(', ') + ' and ' + displaySkills[displaySkills.length - 1]
     : displaySkills[0] || skill1;
@@ -468,7 +475,7 @@ function buildCoverLetter(parsed, kwResult, jdText) {
   const contactFallback = contactStr || 'the contact details in my resume';
   const p4 = `I welcome the opportunity to discuss my application further and am available for interview at short notice. Please feel free to reach me at ${contactFallback}.`;
 
-  const sigContact = [parsed.email, parsed.phone].filter(Boolean).join(' | ');
+  const sigContact = [parsed.email || '', parsed.phone || ''].filter(Boolean).join(' | ');
 
   const sections = [
     dateStr, '',
@@ -479,7 +486,7 @@ function buildCoverLetter(parsed, kwResult, jdText) {
     p3, '',
     p4, '',
     'Yours sincerely,', '',
-    parsed.name || '',
+    parsed.name || 'Applicant',
     sigContact,
   ];
 
@@ -521,9 +528,11 @@ function processApplication(resumeText, jdText) {
     };
   }
 
-  const resume = buildResume(parsed, kwResult, resumeText);
-  const coverLetter = buildCoverLetter(parsed, kwResult, jdText);
-  return { resume, coverLetter };
+  const resumeOutput = buildResume(parsed, kwResult, resumeText);
+  console.error('[ResumeAI] buildResume output length:', resumeOutput.length);
+  const coverLetterOutput = buildCoverLetter(parsed, kwResult, jdText);
+  console.error('[ResumeAI] buildCoverLetter output length:', coverLetterOutput.length);
+  return { resume: resumeOutput, coverLetter: coverLetterOutput };
 }
 
 // ─── DOM References ───────────────────────────────────────────────────────────
@@ -555,7 +564,7 @@ function updateGenerateButton() {
 }
 
 function showError(message) {
-  elErrorMessage.textContent = message;
+  elErrorMessage.textContent = message || 'An unexpected error occurred. Check your resume format.';
   elErrorArea.hidden = false;
 }
 
@@ -586,12 +595,25 @@ elGenerateBtn.addEventListener('click', () => {
   const result = processApplication(resumeText, jdText);
 
   if (result.error) {
-    showError(result.error);
+    showError(result.error || 'An unexpected error occurred. Check your resume format.');
     return;
   }
 
-  elResumePre.textContent = result.resume;
-  elCoverPre.textContent = result.coverLetter;
+  const resumeOutput = result.resume;
+  const coverLetterOutput = result.coverLetter;
+
+  if (!resumeOutput || resumeOutput.trim().length < 50) {
+    showError('Could not parse your resume. Ensure it contains identifiable sections: work experience, education, or skills. Plain text or PDF paste works best.');
+    return;
+  }
+
+  if (!coverLetterOutput || coverLetterOutput.trim().length < 50) {
+    showError('Cover letter could not be generated. Check that your resume includes at least one work experience entry.');
+    return;
+  }
+
+  elResumePre.textContent = resumeOutput;
+  elCoverPre.textContent = coverLetterOutput;
 
   if (elOutputArea.hidden) {
     elOutputArea.hidden = false;
@@ -674,8 +696,14 @@ elHamburger.addEventListener('click', () => elSidebar.classList.toggle('open'));
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
-(function init() {
+function init() {
   const saved = localStorage.getItem(LS_RESUME_KEY);
   if (saved) elResumeTextarea.value = saved;
   updateGenerateButton();
-}());
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
