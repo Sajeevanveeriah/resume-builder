@@ -360,18 +360,6 @@ document.addEventListener('DOMContentLoaded', () => {
     sessionStorage.setItem(SESSION_GEMINI_KEY, key);
     hideKeyModal();
     updateButtonState();
-
-    const resumeText = elResumeTextarea.value.trim();
-    const jdText = elJdTextarea.value.trim();
-    if (resumeText && jdText) {
-      processApplication(resumeText, jdText);
-    }
-  });
-
-  elKeyInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      elSaveKeyBtn.click();
-    }
   });
 
   elResumeTextarea.addEventListener('input', updateButtonState);
