@@ -1,15 +1,15 @@
 const LS_RESUME_KEY = 'resume_text';
-const SESSION_GEMINI_KEY = 'gemini_key';
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=';
+const SESSION_KEY = 'groq_key';
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
 const RESUME_SYSTEM_PROMPT = `You are an expert resume writer specialising in Australian engineering job applications. You will receive a candidate's existing resume and a job description. Rewrite the resume to be ATS-optimised for that specific role.
 
 Rules:
-- Preserve all factual content exactly. Do not invent experience, qualifications, dates, company names, or metrics that are not present in the original resume.
+- Preserve all factual content exactly. Do not invent experience, qualifications, dates, company names, or metrics not present in the original resume.
 - Reorder and reword content to maximise keyword alignment with the job description.
 - Use strong past-tense action verbs for all bullet points.
 - Output plain text only. No markdown. No asterisks. No hyphens used as decorators. Use the bullet character • for all bullet points.
-- Section order: name and contact block, blank line, PROFESSIONAL SUMMARY, blank line, KEY SKILLS, blank line, WORK EXPERIENCE, blank line, EDUCATION, blank line, CERTIFICATIONS (omit section entirely if none in original), blank line, REFEREES.
+- Section order: name and contact block, blank line, PROFESSIONAL SUMMARY, blank line, KEY SKILLS, blank line, WORK EXPERIENCE, blank line, EDUCATION, blank line, CERTIFICATIONS (omit if none in original), blank line, REFEREES.
 - KEY SKILLS: output as comma-separated values on one or two lines, not as bullet points.
 - REFEREES: always output exactly "Available upon request."
 - Do not truncate. Output the complete resume.
@@ -19,11 +19,11 @@ const COVER_SYSTEM_PROMPT = `You are an expert cover letter writer for Australia
 
 Rules:
 - Length: 260 to 320 words for the body paragraphs. Do not exceed 320 words.
-- Four paragraphs: (1) opening — state the role being applied for and the single strongest alignment point; (2) two specific achievements drawn directly from the resume that map to the role requirements — be concrete, reference real company names and outcomes from the resume; (3) skills and domain fit — connect the candidate's technical skills to what the role requires; (4) closing — express availability for interview and provide contact details.
+- Four paragraphs: (1) opening — state the role and strongest alignment point; (2) two specific achievements from the resume mapped to role requirements — concrete, reference real company names and outcomes; (3) skills and domain fit; (4) closing — availability and contact details.
 - Australian English spelling throughout.
-- No generic filler phrases. Do not write "I am a hardworking team player", "I am passionate about", "I would love to", or similar.
+- No generic filler. Do not write "I am a hardworking team player", "I am passionate about", "I would love to", or similar.
 - Output plain text only. No markdown. No asterisks.
-- Structure: date on first line (format DD Month YYYY using today's actual date), blank line, "Hiring Manager" followed by the company name if detectable from the job description, blank line, "Re: [Job Title] Position", blank line, four body paragraphs each separated by a blank line, blank line, "Yours sincerely,", blank line, candidate's full name, candidate's email and phone on one line separated by a space.
+- Structure: date on first line (format DD Month YYYY using today's actual date), blank line, "Hiring Manager" followed by company name if detectable, blank line, "Re: [Job Title] Position", blank line, four paragraphs each separated by a blank line, blank line, "Yours sincerely,", blank line, candidate's full name, candidate's email and phone on one line.
 - Do not add any commentary, preamble, or closing note. Output the cover letter text only.`;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -52,14 +52,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const elApiKeyStatus   = document.getElementById('api-key-status');
 
   const copyFeedbackMap = new Map([[elResumeCopy, 'Copy'], [elCoverCopy, 'Copy']]);
-
-  const STATUS_MESSAGES = {
-    400: 'Bad request. Check your resume and job description contain readable text.',
-    403: "API key rejected. Check the key in the sidebar and try again.",
-    429: 'Rate limit reached (free tier: 15 req/min). Wait 60 seconds and try again.',
-    500: 'Gemini service error. Try again in a moment.',
-    503: 'Gemini service error. Try again in a moment.',
-  };
 
   function updateButtonState() {
     const ok = elResumeTextarea.value.trim().length > 0
@@ -117,19 +109,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function streamGemini({ apiKey, systemPrompt, userMessage, outputPre, outputCard }) {
-    const response = await fetch(GEMINI_ENDPOINT + encodeURIComponent(apiKey), {
+  async function streamGroq({ apiKey, systemPrompt, userMessage, outputPre, outputCard }) {
+    const response = await fetch(GROQ_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey,
+      },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-        generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userMessage  },
+        ],
+        max_tokens: 2048,
+        temperature: 0.4,
+        stream: true,
       }),
     });
 
     if (!response.ok) {
-      let msg = STATUS_MESSAGES[response.status] || 'Unexpected error from Gemini API.';
+      let msg = 'Groq API error.';
+      if (response.status === 401) msg = 'Invalid API key. Check the key in the sidebar.';
+      if (response.status === 429) msg = 'Rate limit reached. Wait 60 seconds and try again.';
+      if (response.status === 500 || response.status === 503) msg = 'Groq service error. Try again in a moment.';
       try {
         const p = await response.json();
         if (p && p.error && p.error.message) msg += ' ' + p.error.message;
@@ -154,9 +157,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!json || json === '[DONE]') continue;
         try {
           const parsed = JSON.parse(json);
-          const delta  = parsed && parsed.candidates && parsed.candidates[0] &&
-                         parsed.candidates[0].content && parsed.candidates[0].content.parts &&
-                         parsed.candidates[0].content.parts[0] && parsed.candidates[0].content.parts[0].text;
+          const delta  = parsed && parsed.choices && parsed.choices[0] &&
+                         parsed.choices[0].delta && parsed.choices[0].delta.content;
           if (delta) {
             if (!started) {
               outputPre.textContent = '';
@@ -175,9 +177,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const jdText     = elJdTextarea.value.trim();
     const apiKey     = elApiKeyInput.value.trim();
 
-    if (!apiKey) { showError('Enter your Gemini API key in the sidebar first.'); return; }
+    if (!apiKey)     { showError('Paste your Groq API key in the sidebar first.'); return; }
     if (!resumeText) { showError('Paste your resume in the sidebar first.'); return; }
-    if (!jdText) { showError('Paste the job description first.'); return; }
+    if (!jdText)     { showError('Paste the job description first.'); return; }
 
     hideError();
     elWordCount.hidden = true;
@@ -186,14 +188,14 @@ document.addEventListener('DOMContentLoaded', () => {
     setGeneratingState(true);
 
     try {
-      await streamGemini({
+      await streamGroq({
         apiKey,
         systemPrompt: RESUME_SYSTEM_PROMPT,
         userMessage:  'RESUME:\n' + resumeText + '\n\nJOB DESCRIPTION:\n' + jdText + '\n\nProduce the tailored resume now.',
         outputPre:    elResumePre,
         outputCard:   elResumeCard,
       });
-      await streamGemini({
+      await streamGroq({
         apiKey,
         systemPrompt: COVER_SYSTEM_PROMPT,
         userMessage:  'RESUME:\n' + resumeText + '\n\nJOB DESCRIPTION:\n' + jdText + '\n\nProduce the cover letter now.',
@@ -214,11 +216,11 @@ document.addEventListener('DOMContentLoaded', () => {
   elApiKeyInput.addEventListener('input', () => {
     const key = elApiKeyInput.value.trim();
     if (key) {
-      sessionStorage.setItem(SESSION_GEMINI_KEY, key);
+      sessionStorage.setItem(SESSION_KEY, key);
       elApiKeyStatus.textContent = 'Key entered';
       elApiKeyStatus.style.color = '#16a34a';
     } else {
-      sessionStorage.removeItem(SESSION_GEMINI_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
       elApiKeyStatus.textContent = '';
     }
     updateButtonState();
@@ -281,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
   (function init() {
     const saved = localStorage.getItem(LS_RESUME_KEY);
     if (saved) elResumeTextarea.value = saved;
-    const savedKey = sessionStorage.getItem(SESSION_GEMINI_KEY);
+    const savedKey = sessionStorage.getItem(SESSION_KEY);
     if (savedKey) {
       elApiKeyInput.value = savedKey;
       elApiKeyStatus.textContent = 'Key entered';
