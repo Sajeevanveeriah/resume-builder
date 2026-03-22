@@ -48,29 +48,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const elHamburger      = document.getElementById('hamburger-btn');
   const elSidebar        = document.getElementById('sidebar');
   const elWordCount      = document.getElementById('word-count');
-  const elModal          = document.getElementById('key-modal');
-  const elKeyInput       = document.getElementById('key-input');
-  const elSaveKeyBtn     = document.getElementById('save-key-btn');
-  const elModalCloseBtn  = document.getElementById('modal-close-btn');
-  const elChangeKeyLink  = document.getElementById('change-key-link');
+  const elApiKeyInput    = document.getElementById('api-key-input');
+  const elApiKeyStatus   = document.getElementById('api-key-status');
 
-  const copyFeedbackMap = new Map([
-    [elResumeCopy, 'Copy'],
-    [elCoverCopy,  'Copy'],
-  ]);
+  const copyFeedbackMap = new Map([[elResumeCopy, 'Copy'], [elCoverCopy, 'Copy']]);
 
   const STATUS_MESSAGES = {
     400: 'Bad request. Check your resume and job description contain readable text.',
-    403: "API key rejected. Click 'Change API key' to re-enter.",
-    429: 'Rate limit reached (free tier: 15 requests/minute). Wait 60 seconds and try again.',
+    403: "API key rejected. Check the key in the sidebar and try again.",
+    429: 'Rate limit reached (free tier: 15 req/min). Wait 60 seconds and try again.',
     500: 'Gemini service error. Try again in a moment.',
     503: 'Gemini service error. Try again in a moment.',
   };
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
   function updateButtonState() {
-    const ok = elResumeTextarea.value.trim().length > 0 && elJdTextarea.value.trim().length > 0;
+    const ok = elResumeTextarea.value.trim().length > 0
+            && elJdTextarea.value.trim().length > 0
+            && elApiKeyInput.value.trim().length > 0;
     elGenerateBtn.disabled = !ok;
   }
 
@@ -82,16 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function hideError() {
     elErrorMessage.textContent = '';
     elErrorArea.hidden = true;
-  }
-
-  function showKeyModal() {
-    elKeyInput.value = '';
-    elModal.hidden = false;
-    setTimeout(() => elKeyInput.focus(), 50);
-  }
-
-  function hideKeyModal() {
-    elModal.hidden = true;
   }
 
   function setGeneratingState(on) {
@@ -107,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setWordCount(text) {
     const n = text.trim() ? text.trim().split(/\s+/).length : 0;
-    elWordCount.textContent = `Word count: ${n}`;
+    elWordCount.textContent = 'Word count: ' + n;
     elWordCount.hidden = false;
   }
 
@@ -126,19 +110,15 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => { btn.textContent = copyFeedbackMap.get(btn) || 'Copy'; }, 1200);
       }).catch(() => {
         const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(pre);
-        sel.removeAllRanges(); sel.addRange(range);
-        btn.textContent = 'Select + Ctrl/Cmd+C';
-        setTimeout(() => { btn.textContent = copyFeedbackMap.get(btn) || 'Copy'; }, 1400);
+        const r = document.createRange();
+        r.selectNodeContents(pre);
+        sel.removeAllRanges(); sel.addRange(r);
       });
     });
   }
 
-  // ── Gemini streaming ─────────────────────────────────────────────────────
-
   async function streamGemini({ apiKey, systemPrompt, userMessage, outputPre, outputCard }) {
-    const response = await fetch(`${GEMINI_ENDPOINT}${encodeURIComponent(apiKey)}`, {
+    const response = await fetch(GEMINI_ENDPOINT + encodeURIComponent(apiKey), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -151,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!response.ok) {
       let msg = STATUS_MESSAGES[response.status] || 'Unexpected error from Gemini API.';
       try {
-        const payload = await response.json();
-        if (payload?.error?.message) msg += ' ' + payload.error.message;
+        const p = await response.json();
+        if (p && p.error && p.error.message) msg += ' ' + p.error.message;
       } catch (_) {}
       throw new Error(msg);
     }
@@ -168,14 +148,15 @@ document.addEventListener('DOMContentLoaded', () => {
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
-
       for (const line of lines) {
         if (!line.startsWith('data:')) continue;
         const json = line.slice(5).trim();
         if (!json || json === '[DONE]') continue;
         try {
           const parsed = JSON.parse(json);
-          const delta  = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+          const delta  = parsed && parsed.candidates && parsed.candidates[0] &&
+                         parsed.candidates[0].content && parsed.candidates[0].content.parts &&
+                         parsed.candidates[0].content.parts[0] && parsed.candidates[0].content.parts[0].text;
           if (delta) {
             if (!started) {
               outputPre.textContent = '';
@@ -189,11 +170,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ── Core flow ────────────────────────────────────────────────────────────
+  async function processApplication() {
+    const resumeText = elResumeTextarea.value.trim();
+    const jdText     = elJdTextarea.value.trim();
+    const apiKey     = elApiKeyInput.value.trim();
 
-  async function processApplication(resumeText, jdText) {
-    const apiKey = sessionStorage.getItem(SESSION_GEMINI_KEY);
-    if (!apiKey) { showKeyModal(); return; }
+    if (!apiKey) { showError('Enter your Gemini API key in the sidebar first.'); return; }
+    if (!resumeText) { showError('Paste your resume in the sidebar first.'); return; }
+    if (!jdText) { showError('Paste the job description first.'); return; }
 
     hideError();
     elWordCount.hidden = true;
@@ -205,19 +189,17 @@ document.addEventListener('DOMContentLoaded', () => {
       await streamGemini({
         apiKey,
         systemPrompt: RESUME_SYSTEM_PROMPT,
-        userMessage:  `RESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jdText}\n\nProduce the tailored resume now.`,
+        userMessage:  'RESUME:\n' + resumeText + '\n\nJOB DESCRIPTION:\n' + jdText + '\n\nProduce the tailored resume now.',
         outputPre:    elResumePre,
         outputCard:   elResumeCard,
       });
-
       await streamGemini({
         apiKey,
         systemPrompt: COVER_SYSTEM_PROMPT,
-        userMessage:  `RESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jdText}\n\nProduce the cover letter now.`,
+        userMessage:  'RESUME:\n' + resumeText + '\n\nJOB DESCRIPTION:\n' + jdText + '\n\nProduce the cover letter now.',
         outputPre:    elCoverPre,
         outputCard:   elCoverCard,
       });
-
       setWordCount(elCoverPre.textContent);
     } catch (err) {
       showError(err instanceof TypeError ? 'Network error. Check your internet connection.' : (err.message || 'Unexpected error.'));
@@ -227,43 +209,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ── Event listeners ──────────────────────────────────────────────────────
+  elGenerateBtn.addEventListener('click', processApplication);
 
-  elGenerateBtn.addEventListener('click', async () => {
-    const apiKey = sessionStorage.getItem(SESSION_GEMINI_KEY);
-    if (!apiKey) { showKeyModal(); return; }
-    await processApplication(elResumeTextarea.value.trim(), elJdTextarea.value.trim());
-  });
-
-  // Modal: X button closes it
-  elModalCloseBtn.addEventListener('click', hideKeyModal);
-
-  // Modal: clicking the dark backdrop closes it
-  elModal.addEventListener('click', (e) => {
-    if (e.target === elModal) hideKeyModal();
-  });
-
-  // Modal: save key then immediately start generation
-  elSaveKeyBtn.addEventListener('click', () => {
-    const key = elKeyInput.value.trim();
-    if (!key) return;
-    sessionStorage.setItem(SESSION_GEMINI_KEY, key);
-    hideKeyModal();
+  elApiKeyInput.addEventListener('input', () => {
+    const key = elApiKeyInput.value.trim();
+    if (key) {
+      sessionStorage.setItem(SESSION_GEMINI_KEY, key);
+      elApiKeyStatus.textContent = 'Key entered';
+      elApiKeyStatus.style.color = '#16a34a';
+    } else {
+      sessionStorage.removeItem(SESSION_GEMINI_KEY);
+      elApiKeyStatus.textContent = '';
+    }
     updateButtonState();
-    const resumeText = elResumeTextarea.value.trim();
-    const jdText     = elJdTextarea.value.trim();
-    if (resumeText && jdText) processApplication(resumeText, jdText);
-  });
-
-  // Modal: Enter key submits
-  elKeyInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') elSaveKeyBtn.click();
-  });
-
-  elChangeKeyLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    sessionStorage.removeItem(SESSION_GEMINI_KEY);
-    showKeyModal();
   });
 
   elSaveBtn.addEventListener('click', () => {
@@ -295,22 +253,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const pdf   = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
       const pages = [];
       for (let i = 1; i <= pdf.numPages; i++) {
-        const page    = await pdf.getPage(i);
+        const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        pages.push(content.items.map(item => item.str).join(' '));
+        pages.push(content.items.map(function(item) { return item.str; }).join(' '));
       }
       elResumeTextarea.value = pages.join('\n').trim();
       updateButtonState();
     } catch (err) {
-      showError(`Failed to read PDF. ${err.message || ''}`.trim());
+      showError('Failed to read PDF. ' + (err.message || ''));
     }
   });
 
   elErrorDismiss.addEventListener('click', hideError);
-
   setupCopy(elResumeCopy, elResumePre);
   setupCopy(elCoverCopy,  elCoverPre);
-
   elResumeDownload.addEventListener('click', () => downloadText(elResumePre.textContent, 'tailored-resume.txt'));
   elCoverDownload.addEventListener('click',  () => downloadText(elCoverPre.textContent,  'cover-letter.txt'));
 
@@ -320,13 +276,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   elResumeTextarea.addEventListener('input', updateButtonState);
-  elJdTextarea.addEventListener('input',     updateButtonState);
-
-  // ── Init ─────────────────────────────────────────────────────────────────
+  elJdTextarea.addEventListener('input', updateButtonState);
 
   (function init() {
     const saved = localStorage.getItem(LS_RESUME_KEY);
     if (saved) elResumeTextarea.value = saved;
+    const savedKey = sessionStorage.getItem(SESSION_GEMINI_KEY);
+    if (savedKey) {
+      elApiKeyInput.value = savedKey;
+      elApiKeyStatus.textContent = 'Key entered';
+      elApiKeyStatus.style.color = '#16a34a';
+    }
     hideError();
     elResumeCard.style.display = 'none';
     elCoverCard.style.display  = 'none';
