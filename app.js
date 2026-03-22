@@ -1,756 +1,379 @@
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const LS_RESUME_KEY = 'resume_text';
+const SESSION_GEMINI_KEY = 'gemini_key';
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=';
 
-const STOPWORDS = new Set([
-  'a','an','the','and','or','to','of','in','for','with','is','are','be',
-  'will','you','we','our','your','this','that','have','has','can','may',
-  'must','should','at','on','by','as','it','its','from','not','but','if',
-  'do','did','been','were','was','had','all','they','their','who','which',
-  'what','how','when','where','why','about','into','through','up','out',
-  'more','also','than','so','such','both','each','any','some','new','no',
-  'other','one','two','three','within','across','over','while','just',
-  'very','well','would','could','am','i','he','she','them','us','me','my',
-  'his','her','work','team','role','ability','strong','good','great',
-  'experience','skills','background','knowledge','understanding','use',
-  'using','used','based','key','high','level','ensure','provide','support',
-  'including','required','preferred','bonus','etc','eg','ie','per','day',
-  'following','able','please','apply','join','opportunity','want','need',
-  'come','make','take','get','give','see','look','keep','let','put',
-  'set','run','help','start','end','go','same','different','own','still',
-  'however','therefore','thus','hence','further','then','again','now',
-  'only','even','most','many','next','last','first','second','third',
-]);
+const RESUME_SYSTEM_PROMPT = `You are an expert resume writer specialising in Australian engineering job applications. You will receive a candidate's existing resume and a job description. Rewrite the resume to be ATS-optimised for that specific role.
 
-const ACTION_VERBS = [
-  'Delivered','Developed','Implemented','Managed','Led','Designed',
-  'Optimised','Reduced','Increased','Automated','Coordinated','Achieved',
-  'Built','Established','Maintained','Improved','Analysed','Configured',
-  'Deployed','Supported',
-];
+Rules:
+- Preserve all factual content exactly. Do not invent experience, qualifications, dates, company names, or metrics that are not present in the original resume.
+- Reorder and reword content to maximise keyword alignment with the job description.
+- Use strong past-tense action verbs for all bullet points.
+- Output plain text only. No markdown. No asterisks. No hyphens used as decorators. Use the bullet character • for all bullet points.
+- Section order: name and contact block, blank line, PROFESSIONAL SUMMARY, blank line, KEY SKILLS, blank line, WORK EXPERIENCE, blank line, EDUCATION, blank line, CERTIFICATIONS (omit section entirely if none in original), blank line, REFEREES.
+- KEY SKILLS: output as comma-separated values on one or two lines, not as bullet points.
+- REFEREES: always output exactly "Available upon request."
+- Do not truncate. Output the complete resume.
+- Do not add any commentary, preamble, or closing note. Output the resume text only.`;
 
-const SECTION_PATTERNS = {
-  summary: /^(summary|professional\s+summary|profile|about\s*me?|career\s+(objective|summary|profile)|executive\s+summary|personal\s+statement|statement|overview)$/i,
-  skills: /^((key\s+|technical\s+|core\s+|professional\s+)?skills?|competenc(y|ies)|technologies|expertise|areas?\s+of\s+expertise|technical\s+proficienc(y|ies)|skill\s*set|tooling)$/i,
-  experience: /^((work\s+|professional\s+|employment\s+|career\s+)?(experience|history)|employment|positions?\s+held)$/i,
-  education: /^(education(al\s+(background|history|qualifications))?|qualifications?|academic(\s+(background|history|qualifications))?)$/i,
-  certifications: /^(certifications?|certificates?|licen[sc]es?|credentials?|accreditations?|professional\s+development|courses?)$/i,
-};
+const COVER_SYSTEM_PROMPT = `You are an expert cover letter writer for Australian engineering job applications. You will receive a candidate's resume and a job description. Write a professional cover letter in Australian English.
 
-// ─── Keyword Extraction ───────────────────────────────────────────────────────
+Rules:
+- Length: 260 to 320 words for the body paragraphs. Do not exceed 320 words.
+- Four paragraphs: (1) opening — state the role being applied for and the single strongest alignment point; (2) two specific achievements drawn directly from the resume that map to the role requirements — be concrete, reference real company names and outcomes from the resume; (3) skills and domain fit — connect the candidate's technical skills to what the role requires; (4) closing — express availability for interview and provide contact details.
+- Australian English spelling throughout.
+- No generic filler phrases. Do not write "I am a hardworking team player", "I am passionate about", "I would love to", or similar.
+- Output plain text only. No markdown. No asterisks.
+- Structure: date on first line (format DD Month YYYY using today's actual date), blank line, "Hiring Manager" followed by the company name if detectable from the job description, blank line, "Re: [Job Title] Position", blank line, four body paragraphs each separated by a blank line, blank line, "Yours sincerely,", blank line, candidate's full name, candidate's email and phone on one line separated by a space.
+- Do not add any commentary, preamble, or closing note. Output the cover letter text only.`;
 
-function extractKeywords(jdText) {
-  const lower = jdText.toLowerCase();
-  const rawWords = lower.split(/\s+/);
-  const cleaned = rawWords.map(w => w.replace(/[^a-z0-9]/g, ''));
+document.addEventListener('DOMContentLoaded', () => {
+  const elResumeTextarea = document.getElementById('resume-textarea');
+  const elJdTextarea = document.getElementById('jd-textarea');
+  const elGenerateBtn = document.getElementById('generate-btn');
+  const elResumeCard = document.getElementById('resume-card');
+  const elCoverCard = document.getElementById('cover-card');
+  const elResumePre = document.getElementById('resume-output');
+  const elCoverPre = document.getElementById('cover-output');
+  const elResumeCopy = document.getElementById('resume-copy');
+  const elCoverCopy = document.getElementById('cover-copy');
+  const elResumeDownload = document.getElementById('resume-download');
+  const elCoverDownload = document.getElementById('cover-download');
+  const elErrorArea = document.getElementById('error-area');
+  const elErrorMessage = document.getElementById('error-message');
+  const elErrorDismiss = document.getElementById('error-dismiss');
+  const elSaveBtn = document.getElementById('save-btn');
+  const elClearBtn = document.getElementById('clear-btn');
+  const elUploadBtn = document.getElementById('upload-btn');
+  const elFileInput = document.getElementById('file-input');
+  const elHamburger = document.getElementById('hamburger-btn');
+  const elSidebar = document.getElementById('sidebar');
+  const elWordCount = document.getElementById('word-count');
+  const elModal = document.getElementById('key-modal');
+  const elKeyInput = document.getElementById('key-input');
+  const elSaveKeyBtn = document.getElementById('save-key-btn');
+  const elChangeKeyLink = document.getElementById('change-key-link');
 
-  const significant = cleaned.filter(w => w.length > 2 && !STOPWORDS.has(w));
+  const copyFeedbackMap = new Map([
+    [elResumeCopy, 'Copy'],
+    [elCoverCopy, 'Copy'],
+  ]);
 
-  const wordFreq = {};
-  significant.forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1; });
+  const statusMessage = {
+    400: 'Bad request. Check your resume and job description contain readable text.',
+    403: "API key rejected. Click 'Change API key' to re-enter.",
+    429: 'Rate limit reached (free tier: 15 requests/minute). Wait 60 seconds and try again.',
+    500: 'Gemini service error. Try again in a moment.',
+    503: 'Gemini service error. Try again in a moment.',
+  };
 
-  const phraseFreq = {};
-  const tokenList = cleaned.filter(w => w.length > 0);
-  for (let i = 0; i < tokenList.length - 1; i++) {
-    const a = tokenList[i], b = tokenList[i + 1];
-    if (a.length > 2 && b.length > 2 && !STOPWORDS.has(a) && !STOPWORDS.has(b)) {
-      const p2 = a + ' ' + b;
-      phraseFreq[p2] = (phraseFreq[p2] || 0) + 1;
-    }
-    if (i < tokenList.length - 2) {
-      const c = tokenList[i + 2];
-      if (a.length > 2 && c.length > 2 && !STOPWORDS.has(a) && !STOPWORDS.has(c)) {
-        const p3 = a + ' ' + tokenList[i + 1] + ' ' + c;
-        phraseFreq[p3] = (phraseFreq[p3] || 0) + 1;
-      }
-    }
+  function updateButtonState() {
+    const hasResume = elResumeTextarea.value.trim().length > 0;
+    const hasJd = elJdTextarea.value.trim().length > 0;
+    elGenerateBtn.disabled = !(hasResume && hasJd);
   }
 
-  const topKeywords = Object.entries(wordFreq)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30)
-    .map(([word]) => word);
-
-  const topPhrases = Object.entries(phraseFreq)
-    .filter(([, count]) => count >= 2)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([phrase]) => phrase);
-
-  const jobTitle = extractJobTitle(jdText);
-  const companyName = extractCompanyName(jdText);
-
-  return { keywords: topKeywords, phrases: topPhrases, jobTitle, companyName };
-}
-
-function extractJobTitle(jdText) {
-  const patterns = [
-    /(?:position|role|title|job\s+title)\s*[:\-]\s*([A-Z][^\n,\.]{3,55})/i,
-    /(?:looking\s+for|seeking|hiring|recruiting)[^\n]{0,30}?(?:a|an)\s+([A-Z][a-zA-Z\s\/\-]{3,45})/i,
-    /^([A-Z][a-zA-Z\/\s\-]{5,50})\s*\n/m,
-  ];
-  for (const re of patterns) {
-    const m = jdText.match(re);
-    if (m && m[1]) return m[1].trim().replace(/[,\.;:!?]+$/, '');
-  }
-  const first = jdText.split('\n').map(l => l.trim()).find(l => l.length > 3 && l.length < 80);
-  return first ? first.replace(/[,\.;:!?]+$/, '') : '';
-}
-
-function extractCompanyName(jdText) {
-  const patterns = [
-    /([A-Z][a-zA-Z\s&\.,]{1,45}?)\s+is\s+(?:looking|seeking|hiring|a\s+leading|an?\s+)/,
-    /(?:at|join|with)\s+([A-Z][a-zA-Z\s&\.,]{1,45}?)(?:\s+is|\s+are|\s+we|\s+an?\b|[,\.\n])/,
-    /(?:company|employer|organisation|organization)\s*[:\-]\s*([A-Z][^\n,\.]{2,45})/i,
-  ];
-  for (const re of patterns) {
-    const m = jdText.match(re);
-    if (m && m[1]) {
-      const name = m[1].trim().replace(/[,\.;]+$/, '');
-      if (name.split(/\s+/).length <= 7 && !STOPWORDS.has(name.toLowerCase())) return name;
-    }
-  }
-  return '';
-}
-
-// ─── Resume Parsing ───────────────────────────────────────────────────────────
-
-function parseResume(rawText) {
-  // FIX 1: Normalise PDF blob text – insert line breaks before known section headings
-  const HEADINGS = [
-    'Professional Summary', 'Summary', 'Profile', 'Objective',
-    'Key Skills', 'Skills', 'Competencies', 'Core Competencies',
-    'Professional Experience', 'Work Experience', 'Employment History',
-    'Experience', 'Education', 'Qualifications', 'Academic Background',
-    'Certifications', 'Certificates', 'Licences', 'Licenses',
-    'References', 'Referees', 'Achievements', 'Awards'
-  ];
-  let text = rawText;
-  HEADINGS.forEach(h => {
-    const pattern = new RegExp('(' + h + ')', 'gi');
-    text = text.replace(pattern, '\n\n$1');
-  });
-  // Insert line break before bullet markers that have been concatenated
-  text = text.replace(/([a-z,.])\s*[•·▪▸\-]\s*/g, '$1\n• ');
-  // Insert line break before lines that look like job title patterns (e.g. "Title | Company | ...")
-  text = text.replace(/([A-Za-z])\s+((?:[A-Z][a-z]+\s*)+\|)/g, '$1\n$2');
-  // Collapse 3+ spaces/tabs to newlines (common in PDF column extraction)
-  text = text.replace(/[ \t]{3,}/g, '\n');
-  // Normalise multiple blank lines
-  text = text.replace(/\n{3,}/g, '\n\n');
-
-  const lines = text.split('\n');
-  const full = text;
-
-  // FIX 3: Extract contact info aggressively from the full (normalised) text
-  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}/);
-  const phoneMatch = text.match(/(?:\+61|0)[0-9\s]{8,12}/);
-  const nameMatch = text.match(/^[A-Z][a-z]+(?:\s[A-Z][a-z]+)+/m);
-  const email = emailMatch ? emailMatch[0] : '';
-  const phone = phoneMatch ? phoneMatch[0].trim() : '';
-
-  const linkedinM = full.match(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[\w\-]+\/?/i);
-  const linkedin = linkedinM ? linkedinM[0] : '';
-
-  const sections = { header: [], summary: [], skills: [], experience: [], education: [], certifications: [] };
-  let currentKey = 'header';
-
-  for (const line of lines) {
-    const stripped = line.trim().replace(/:$/, '').trim();
-    let found = null;
-
-    if (stripped.length > 0 && stripped.length < 65) {
-      for (const [key, re] of Object.entries(SECTION_PATTERNS)) {
-        if (re.test(stripped)) { found = key; break; }
-      }
-      if (!found && stripped === stripped.toUpperCase() && stripped.length >= 4 && /[A-Z]/.test(stripped)) {
-        const lower = stripped.toLowerCase();
-        for (const [key, re] of Object.entries(SECTION_PATTERNS)) {
-          if (re.test(lower)) { found = key; break; }
-        }
-      }
-    }
-
-    if (found) {
-      currentKey = found;
-    } else {
-      sections[currentKey].push(line);
-    }
+  function showError(message) {
+    elErrorMessage.textContent = message;
+    elErrorArea.hidden = false;
   }
 
-  // FIX 3: Prefer regex-extracted name; fall back to header scan
-  let name = nameMatch ? nameMatch[0].trim() : '';
-  if (!name) {
-    for (const line of sections.header) {
-      const t = line.trim();
-      if (!t || t.includes('@') || t.includes('linkedin.com')) continue;
-      if (/^\+?[\d\s\-\(\)\.]{7,}$/.test(t)) continue;
-      if (t.length < 2 || t.length > 65) continue;
-      name = t;
-      break;
-    }
+  function hideError() {
+    elErrorMessage.textContent = '';
+    elErrorArea.hidden = true;
   }
 
-  let location = '';
-  const topText = lines.slice(0, 15).join('\n');
-  const locM = topText.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*),?\s*(?:[A-Z]{2,3}|NSW|VIC|QLD|WA|SA|TAS|ACT|NT|Victoria|Queensland|New South Wales|Western Australia|South Australia|Tasmania)/);
-  if (locM) location = locM[0];
-
-  const summary = sections.summary.filter(l => l.trim()).join(' ').trim();
-
-  const skills = [];
-  sections.skills.filter(l => l.trim()).forEach(line => {
-    line.split(/[,|•·\-;]+/).map(s => s.trim()).filter(s => s.length > 1 && s.length < 50).forEach(s => skills.push(s));
-  });
-
-  const experience = parseExperienceSection(sections.experience);
-  const education = parseEducationSection(sections.education);
-  const certifications = sections.certifications.filter(l => l.trim()).map(l => l.replace(/^[•·\-\*]\s*/, '').trim());
-
-  return { name, email, phone, linkedin, location, summary, skills, experience, education, certifications };
-}
-
-function parseExperienceSection(lines) {
-  const DATE_RE = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|\d{4}|present|current)\b/i;
-  const BULLET_RE = /^[\s]*[•·\-\*▪◦‣>]\s*(.+)/;
-  const entries = [];
-  let cur = null;
-
-  const push = () => { if (cur) entries.push(cur); };
-  const blank = () => ({ title: '', company: '', location: '', dates: '', bullets: [] });
-
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t) continue;
-
-    const bulletM = t.match(BULLET_RE);
-    if (bulletM) {
-      if (!cur) cur = blank();
-      cur.bullets.push(bulletM[1].trim());
-      continue;
-    }
-
-    const hasDate = DATE_RE.test(t);
-    const hasPipe = t.includes('|');
-
-    if ((hasDate || hasPipe) && t.length < 220) {
-      if (cur && !cur.company && !cur.dates && cur.bullets.length === 0) {
-        if (hasPipe) {
-          const parts = t.split('|').map(p => p.trim());
-          cur.company = parts[0] || '';
-          for (const p of parts.slice(1)) {
-            if (DATE_RE.test(p)) cur.dates = p;
-            else if (!cur.location) cur.location = p;
-          }
-        } else {
-          const m = t.match(/^(.+?)\s*[|,–—\-]\s*(.+)$/);
-          if (m && DATE_RE.test(m[2])) {
-            cur.company = m[1].trim();
-            cur.dates = m[2].trim();
-          } else {
-            cur.company = t;
-          }
-        }
-      } else {
-        push();
-        cur = blank();
-        if (hasPipe) {
-          const parts = t.split('|').map(p => p.trim());
-          cur.title = parts[0] || '';
-          cur.company = parts[1] || '';
-          for (const p of parts.slice(2)) {
-            if (DATE_RE.test(p)) cur.dates = p;
-            else if (!cur.location) cur.location = p;
-          }
-        } else {
-          const m = t.match(/^(.+?)\s*[,–—\-]\s*(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|\d{4}).+)$/i);
-          if (m) {
-            const before = m[1].split(/[,|]/).map(p => p.trim());
-            cur.title = before[0] || '';
-            cur.company = before[1] || '';
-            cur.dates = m[2].trim();
-          } else {
-            cur.title = t;
-          }
-        }
-      }
-    } else if (cur) {
-      if (!cur.company && t.length < 80) {
-        cur.company = t;
-      } else {
-        cur.bullets.push(t);
-      }
-    } else {
-      cur = blank();
-      cur.title = t;
-    }
-  }
-  push();
-  return entries;
-}
-
-function parseEducationSection(lines) {
-  const YEAR_RE = /\b((?:19|20)\d{2})\b/;
-  const entries = [];
-  let cur = null;
-
-  for (const line of lines) {
-    const t = line.trim().replace(/^[•·\-\*]\s*/, '');
-    if (!t) continue;
-
-    const hasYear = YEAR_RE.test(t);
-    const hasPipe = t.includes('|');
-
-    if (hasYear || hasPipe) {
-      if (cur) entries.push(cur);
-      if (hasPipe) {
-        const parts = t.split('|').map(p => p.trim());
-        const yearM = t.match(YEAR_RE);
-        cur = { degree: parts[0] || '', institution: parts[1] || '', year: yearM ? yearM[0] : (parts[2] || '') };
-      } else {
-        const m = t.match(/^(.+?)[,\s]+(\b(?:19|20)\d{2}\b.*)$/);
-        if (m) {
-          const before = m[1].split(/[,|]/).map(p => p.trim());
-          cur = { degree: before[0] || '', institution: before[1] || '', year: m[2].trim() };
-        } else {
-          cur = { degree: t, institution: '', year: '' };
-        }
-      }
-    } else if (cur) {
-      if (!cur.institution) cur.institution = t;
-    } else {
-      cur = { degree: t, institution: '', year: '' };
-    }
-  }
-  if (cur) entries.push(cur);
-  return entries;
-}
-
-// ─── Resume Builder ───────────────────────────────────────────────────────────
-
-function buildResume(parsed, kwResult, resumeText) {
-  if (!parsed || (!parsed.name && !(parsed.experience && parsed.experience.length) && !(parsed.skills && parsed.skills.length) && !(parsed.education && parsed.education.length))) return '';
-  const { keywords } = kwResult;
-  const out = [];
-
-  out.push(parsed.name || 'Your Name');
-  const contact = [parsed.email || '', parsed.phone || '', parsed.location || ''].filter(Boolean).join(' | ');
-  if (contact) out.push(contact);
-  if (parsed.linkedin) out.push(parsed.linkedin);
-  out.push('');
-
-  out.push('PROFESSIONAL SUMMARY');
-  out.push(buildSummary(parsed, keywords));
-  out.push('');
-
-  const skills = buildSkillsList(parsed, keywords, resumeText);
-  if (skills.length > 0) {
-    out.push('KEY SKILLS');
-    for (let i = 0; i < skills.length; i += 6) {
-      out.push(skills.slice(i, i + 6).join(', '));
-    }
-    out.push('');
+  function showKeyModal() {
+    elModal.hidden = false;
+    elKeyInput.value = '';
+    setTimeout(() => elKeyInput.focus(), 0);
   }
 
-  if ((parsed.experience || []).length > 0) {
-    out.push('WORK EXPERIENCE');
-    parsed.experience.forEach(exp => {
-      const header = [exp.title, exp.company, exp.location, exp.dates].filter(Boolean).join(' | ');
-      out.push(header);
-      exp.bullets.forEach(b => out.push('• ' + rewriteBullet(b)));
-      if (exp.bullets.length === 0) out.push('• ' + ACTION_VERBS[0] + ' key responsibilities within the role.');
-      out.push('');
+  function hideKeyModal() {
+    elModal.hidden = true;
+  }
+
+  function setGeneratingState(isGenerating) {
+    elGenerateBtn.disabled = isGenerating || !(elResumeTextarea.value.trim() && elJdTextarea.value.trim());
+    elGenerateBtn.textContent = isGenerating ? 'Generating…' : 'Tailor My Application';
+    elGenerateBtn.classList.toggle('generating', isGenerating);
+  }
+
+  function setCardSkeleton(card, pre) {
+    pre.innerHTML = '<div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>';
+    card.style.display = 'block';
+  }
+
+  function clearCardForStreaming(pre) {
+    pre.textContent = '';
+  }
+
+  function setWordCount(text) {
+    const count = text.trim() ? text.trim().split(/\s+/).length : 0;
+    elWordCount.textContent = `Word count: ${count}`;
+    elWordCount.hidden = false;
+  }
+
+  function downloadText(text, filename) {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function fallbackSelectCopy(targetPre) {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(targetPre);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function setupCopy(button, outputPre) {
+    button.addEventListener('click', () => {
+      const text = outputPre.textContent || '';
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          button.textContent = 'Copied!';
+          setTimeout(() => {
+            button.textContent = copyFeedbackMap.get(button) || 'Copy';
+          }, 1200);
+        })
+        .catch(() => {
+          fallbackSelectCopy(outputPre);
+          button.textContent = 'Select + Ctrl/Cmd+C';
+          setTimeout(() => {
+            button.textContent = copyFeedbackMap.get(button) || 'Copy';
+          }, 1400);
+        });
     });
-  } else {
-    // FIX 5: Fallback – extract experience block from raw text when section parsing failed
-    const expMatch = resumeText.match(
-      /(?:professional\s+experience|work\s+experience|employment)[:\s]*([\s\S]*?)(?=\n\n[A-Z]|education|certif|$)/i
-    );
-    if (expMatch) {
-      out.push('WORK EXPERIENCE');
-      out.push(expMatch[1].trim());
-      out.push('');
-    }
   }
 
-  if ((parsed.education || []).length > 0) {
-    out.push('EDUCATION');
-    parsed.education.forEach(edu => {
-      out.push([edu.degree, edu.institution, edu.year].filter(Boolean).join(' | '));
+  async function parseErrorResponse(response) {
+    let message = statusMessage[response.status] || 'Unexpected error from Gemini API.';
+    try {
+      const payload = await response.json();
+      const apiMessage = payload?.error?.message;
+      if (apiMessage) message = `${message} ${apiMessage}`;
+    } catch (_) {
+      // Ignore JSON parse failures
+    }
+    throw new Error(message);
+  }
+
+  async function streamGemini({ apiKey, systemPrompt, userMessage, outputPre, outputCard }) {
+    const response = await fetch(`${GEMINI_ENDPOINT}${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: {
+          parts: [{ text: systemPrompt }],
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: userMessage }],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 2048,
+          temperature: 0.4,
+        },
+      }),
     });
-    out.push('');
-  }
 
-  if ((parsed.certifications || []).length > 0) {
-    out.push('CERTIFICATIONS');
-    parsed.certifications.forEach(c => out.push(c));
-    out.push('');
-  }
-
-  out.push('REFEREES');
-  out.push('Available upon request.');
-
-  const result = out.join('\n');
-  if (result.length < 100) {
-    console.error('[ResumeAI] buildResume: output unexpectedly short. Parsed object:', parsed);
-  }
-  return result;
-}
-
-function buildSummary(parsed, keywords) {
-  let base = parsed.summary;
-
-  if (!base) {
-    const recentTitle = parsed.experience.length > 0 ? parsed.experience[0].title : '';
-    const topSkills = parsed.skills.slice(0, 3).join(', ');
-    base = recentTitle
-      ? `Experienced ${recentTitle} with a proven track record of delivering results across multiple organisations.`
-      : 'Skilled professional with extensive experience across a range of roles and environments.';
-    if (topSkills) base += ` Proficient in ${topSkills}, with a strong commitment to quality and continuous improvement.`;
-  }
-
-  const top5 = keywords.slice(0, 5);
-  const baseLower = base.toLowerCase();
-  const missing = top5.filter(kw => !baseLower.includes(kw)).slice(0, 3);
-  if (missing.length > 0) {
-    base = base.trimEnd();
-    if (!base.endsWith('.')) base += '.';
-    base += ` Demonstrated expertise in ${missing.join(', ')}, consistently delivering high-quality outcomes in dynamic environments.`;
-  }
-
-  return base;
-}
-
-function buildSkillsList(parsed, keywords, resumeText) {
-  const lowerResume = resumeText.toLowerCase();
-  const seen = new Set();
-  const result = [];
-
-  parsed.skills.forEach(s => {
-    const key = s.toLowerCase().trim();
-    if (key.length > 1 && !seen.has(key)) { seen.add(key); result.push(s.trim()); }
-  });
-
-  keywords.forEach(kw => {
-    if (kw.length > 3 && lowerResume.includes(kw) && !seen.has(kw)) {
-      seen.add(kw);
-      result.push(kw.charAt(0).toUpperCase() + kw.slice(1));
+    if (!response.ok) {
+      await parseErrorResponse(response);
     }
-  });
 
-  return result;
-}
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamedAny = false;
 
-function rewriteBullet(bullet) {
-  const lower = bullet.toLowerCase().trim();
-  if (ACTION_VERBS.some(v => lower.startsWith(v.toLowerCase()))) return bullet;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
 
-  const stripped = bullet
-    .replace(/^(?:responsible\s+for|tasked\s+with|worked\s+on|assisted\s+with|helped\s+with|involved\s+in|duties?\s+included?|acted\s+as|served\s+as|provided)\s+/i, '')
-    .trim();
-
-  const verb = ACTION_VERBS[simpleHash(bullet) % ACTION_VERBS.length];
-  const rest = stripped.length > 0
-    ? stripped.charAt(0).toLowerCase() + stripped.slice(1)
-    : stripped;
-  return `${verb} ${rest}`;
-}
-
-function simpleHash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-// ─── Cover Letter Builder ─────────────────────────────────────────────────────
-
-function buildCoverLetter(parsed, kwResult, jdText) {
-  if (!parsed) return '';
-  const { keywords, jobTitle, companyName } = kwResult;
-  const lowerJd = jdText.toLowerCase();
-
-  const today = new Date();
-  const months = ['January','February','March','April','May','June',
-    'July','August','September','October','November','December'];
-  const dateStr = String(today.getDate()).padStart(2, '0') + ' ' + months[today.getMonth()] + ' ' + today.getFullYear();
-
-  const company = companyName || 'your organisation';
-  const role = jobTitle || 'this position';
-
-  const allSkills = parsed.skills || [];
-  const skill1 = allSkills[0] || keywords[0] || 'professional expertise';
-  const skill2 = allSkills[1] || keywords[1] || 'stakeholder collaboration';
-
-  const p1 = `I am applying for the ${role} at ${company}, a role that aligns closely with my professional background and the trajectory of my career. With a strong foundation in ${skill1} and ${skill2}, I am positioned to contribute immediately and deliver meaningful results.`;
-
-  const exps = (parsed.experience || []).slice(0, 2);
-  const p2parts = exps.map(exp => {
-    const rawBullet = exp.bullets[0] || `contributed to the objectives of ${exp.company || 'the organisation'}`;
-    const verb = ACTION_VERBS[simpleHash(rawBullet) % ACTION_VERBS.length];
-    const stripped = rawBullet
-      .replace(/^(?:responsible\s+for|tasked\s+with|worked\s+on|assisted\s+with)\s+/i, '')
-      .trim();
-    const rewritten = verb + ' ' + stripped.charAt(0).toLowerCase() + stripped.slice(1);
-    const kwMatch = keywords.find(kw => rawBullet.toLowerCase().includes(kw) || lowerJd.includes(kw));
-    const companyStr = exp.company ? `at ${exp.company}` : 'in my previous role';
-    const titleStr = exp.title ? `, serving as ${exp.title}` : '';
-    return `${companyStr.charAt(0).toUpperCase() + companyStr.slice(1)}${titleStr}, I ${rewritten}${kwMatch ? ', demonstrating strong ' + kwMatch + ' capability' : ''}.`;
-  });
-  const p2 = p2parts.join(' ');
-
-  const matchedSkills = allSkills.filter(s =>
-    keywords.some(kw => s.toLowerCase().includes(kw) || kw.includes(s.toLowerCase()))
-  );
-  const displaySkills = [...matchedSkills, ...allSkills.filter(s => !matchedSkills.includes(s))].slice(0, 3);
-  const skillPhrase = displaySkills.length >= 2
-    ? displaySkills.slice(0, -1).join(', ') + ' and ' + displaySkills[displaySkills.length - 1]
-    : displaySkills[0] || skill1;
-  const kw0 = keywords[0] || 'core objectives';
-  const p3 = `My proficiency in ${skillPhrase} directly addresses the requirements outlined for this position. I am keen to bring this expertise to ${company} and contribute to the team's ${kw0} goals and broader success.`;
-
-  const contactStr = [parsed.email, parsed.phone].filter(Boolean).join(' or ');
-  const contactFallback = contactStr || 'the contact details in my resume';
-  const p4 = `I welcome the opportunity to discuss my application further and am available for interview at short notice. Please feel free to reach me at ${contactFallback}.`;
-
-  const sigContact = [parsed.email || '', parsed.phone || ''].filter(Boolean).join(' | ');
-
-  const sections = [
-    dateStr, '',
-    'Hiring Manager' + (companyName ? ', ' + companyName : ''),
-    'Re: ' + role + ' Position', '',
-    p1, '',
-    p2, '',
-    p3, '',
-    p4, '',
-    'Yours sincerely,', '',
-    parsed.name || 'Applicant',
-    sigContact,
-  ];
-
-  return enforceWordLimit(sections.join('\n'), 320);
-}
-
-function enforceWordLimit(text, maxWords) {
-  const words = text.split(/\s+/).filter(w => w.length > 0);
-  if (words.length <= maxWords) return text;
-
-  const paras = text.split('\n\n');
-  for (let i = paras.length - 1; i >= 0; i--) {
-    const paraWords = paras[i].split(/\s+/).filter(w => w.length > 0);
-    const excess = words.length - maxWords;
-    if (paraWords.length > excess + 10) {
-      const trimmed = paraWords.slice(0, paraWords.length - excess).join(' ');
-      if (!trimmed.endsWith('.')) {
-        const lastDot = trimmed.lastIndexOf('.');
-        paras[i] = lastDot > trimmed.length / 2 ? trimmed.slice(0, lastDot + 1) : trimmed + '.';
-      } else {
-        paras[i] = trimmed;
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const json = line.slice(5).trim();
+        if (!json || json === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(json);
+          const delta = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (delta) {
+            if (!streamedAny) {
+              clearCardForStreaming(outputPre);
+              outputCard.style.display = 'block';
+              streamedAny = true;
+            }
+            outputPre.textContent += delta;
+          }
+        } catch (_) {
+          // skip malformed line
+        }
       }
-      break;
     }
   }
 
-  return paras.join('\n\n');
-}
+  async function processApplication(resumeText, jdText) {
+    const apiKey = sessionStorage.getItem(SESSION_GEMINI_KEY);
+    if (!apiKey) {
+      showKeyModal();
+      return;
+    }
 
-// ─── Orchestrator ─────────────────────────────────────────────────────────────
+    hideError();
+    elWordCount.hidden = true;
+    elResumeCard.style.display = 'none';
+    elCoverCard.style.display = 'none';
+    setCardSkeleton(elResumeCard, elResumePre);
+    setCardSkeleton(elCoverCard, elCoverPre);
 
-function processApplication(rawText, jdText) {
-  const kwResult = extractKeywords(jdText);
-  const parsed = parseResume(rawText);
+    setGeneratingState(true);
 
-  const hasMinimumContent = parsed.name
-    || (parsed.experience && parsed.experience.length > 0)
-    || (parsed.skills && parsed.skills.length > 0)
-    || (parsed.education && parsed.education.length > 0)
-    || rawText.trim().length > 200;
-  if (!hasMinimumContent) {
-    return {
-      error: 'Could not recognise your resume. Ensure it contains work experience, skills, or education sections, then try again.',
-    };
-  }
+    try {
+      const resumeUserMessage = `RESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jdText}\n\nProduce the tailored resume now.`;
+      await streamGemini({
+        apiKey,
+        systemPrompt: RESUME_SYSTEM_PROMPT,
+        userMessage: resumeUserMessage,
+        outputPre: elResumePre,
+        outputCard: elResumeCard,
+      });
 
-  const resumeOutput = buildResume(parsed, kwResult, rawText);
-  console.error('[ResumeAI] buildResume output length:', resumeOutput.length);
-  const coverLetterOutput = buildCoverLetter(parsed, kwResult, jdText);
-  console.error('[ResumeAI] buildCoverLetter output length:', coverLetterOutput.length);
-  return { resume: resumeOutput, coverLetter: coverLetterOutput };
-}
+      const coverUserMessage = `RESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jdText}\n\nProduce the cover letter now.`;
+      await streamGemini({
+        apiKey,
+        systemPrompt: COVER_SYSTEM_PROMPT,
+        userMessage: coverUserMessage,
+        outputPre: elCoverPre,
+        outputCard: elCoverCard,
+      });
 
-// ─── DOM References ───────────────────────────────────────────────────────────
-
-const elResumeTextarea = document.getElementById('resume-textarea');
-const elJdTextarea     = document.getElementById('jd-textarea');
-const elGenerateBtn    = document.getElementById('generate-btn');
-const elOutputArea     = document.getElementById('output-area');
-const elResumePre      = document.getElementById('resume-output');
-const elCoverPre       = document.getElementById('cover-output');
-const elResumeCopy     = document.getElementById('resume-copy');
-const elResumeDownload = document.getElementById('resume-download');
-const elCoverCopy      = document.getElementById('cover-copy');
-const elCoverDownload  = document.getElementById('cover-download');
-const elErrorArea      = document.getElementById('error-area');
-const elErrorMessage   = document.getElementById('error-message');
-const elErrorDismiss   = document.getElementById('error-dismiss');
-const elSaveBtn        = document.getElementById('save-btn');
-const elClearBtn       = document.getElementById('clear-btn');
-const elUploadBtn      = document.getElementById('upload-btn');
-const elFileInput      = document.getElementById('file-input');
-const elHamburger      = document.getElementById('hamburger-btn');
-const elSidebar        = document.getElementById('sidebar');
-
-const errorBanner      = elErrorArea;
-const outputSection    = elOutputArea;
-const elJDTextarea     = elJdTextarea;
-const elCoverLetterPre = elCoverPre;
-
-// ─── UI Helpers ───────────────────────────────────────────────────────────────
-
-function updateButtonState() {
-  const ok = elResumeTextarea.value.trim().length > 0
-           && elJDTextarea.value.trim().length > 0;
-  elGenerateBtn.disabled = !ok;
-}
-
-function showError(msg) {
-  if (!msg || !msg.trim()) return;
-  errorBanner.textContent = msg;
-  errorBanner.style.display = 'flex';
-}
-
-function hideError() {
-  errorBanner.style.display = 'none';
-  errorBanner.textContent = '';
-}
-
-function downloadText(text, filename) {
-  const blob = new Blob([text], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ─── Event Listeners ──────────────────────────────────────────────────────────
-
-elGenerateBtn.addEventListener('click', () => {
-  hideError();
-  const resumeText = elResumeTextarea.value.trim();
-  const jdText = elJdTextarea.value.trim();
-
-  const result = processApplication(resumeText, jdText);
-
-  if (result.error) {
-    showError(result.error || 'An unexpected error occurred. Check your resume format.');
-    return;
-  }
-
-  const resumeOutput = result.resume;
-  const coverLetterOutput = result.coverLetter;
-
-  elResumePre.textContent = resumeOutput || '';
-  elCoverLetterPre.textContent = coverLetterOutput || '';
-
-  if (!resumeOutput || resumeOutput.trim().length < 50) {
-    showError('Could not parse your resume. Ensure it contains work experience, education, or skills sections.');
-    outputSection.style.display = 'none';
-    return;
-  }
-  hideError();
-  outputSection.style.display = 'block';
-
-  outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
-
-elSaveBtn.addEventListener('click', () => {
-  try {
-    localStorage.setItem(LS_RESUME_KEY, elResumeTextarea.value);
-    const orig = elSaveBtn.textContent;
-    elSaveBtn.textContent = 'Saved';
-    setTimeout(() => { elSaveBtn.textContent = orig; }, 2000);
-  } catch (err) {
-    if (err.name === 'QuotaExceededError') {
-      showError('Storage quota exceeded. Unable to save resume.');
-    } else {
-      showError('Failed to save: ' + (err.message || String(err)));
+      setWordCount(elCoverPre.textContent);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        showError('Network error. Check your internet connection.');
+      } else {
+        showError(error.message || 'Unexpected error occurred.');
+      }
+    } finally {
+      setGeneratingState(false);
+      updateButtonState();
     }
   }
-});
 
-elClearBtn.addEventListener('click', () => {
-  if (!window.confirm('Clear your saved resume? This cannot be undone.')) return;
-  elResumeTextarea.value = '';
-  try { localStorage.removeItem(LS_RESUME_KEY); } catch (_) {}
-  updateButtonState();
-});
+  elGenerateBtn.addEventListener('click', async () => {
+    const resumeText = elResumeTextarea.value.trim();
+    const jdText = elJdTextarea.value.trim();
+    const apiKey = sessionStorage.getItem(SESSION_GEMINI_KEY);
 
-elUploadBtn.addEventListener('click', () => elFileInput.click());
-
-elFileInput.addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  elFileInput.value = '';
-
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let text = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map(item => item.str).join(' ') + '\n';
+    if (!apiKey) {
+      showKeyModal();
+      return;
     }
-    elResumeTextarea.value = text.trim();
+
+    await processApplication(resumeText, jdText);
+  });
+
+  elSaveBtn.addEventListener('click', () => {
+    try {
+      localStorage.setItem(LS_RESUME_KEY, elResumeTextarea.value);
+      const oldText = elSaveBtn.textContent;
+      elSaveBtn.textContent = 'Saved';
+      setTimeout(() => { elSaveBtn.textContent = oldText; }, 900);
+    } catch (error) {
+      if (error.name === 'QuotaExceededError') {
+        showError('Storage quota exceeded. Could not save your resume.');
+        return;
+      }
+      showError(error.message || 'Unable to save resume text.');
+    }
+  });
+
+  elClearBtn.addEventListener('click', () => {
+    if (!window.confirm('Clear your saved resume? This cannot be undone.')) return;
+    elResumeTextarea.value = '';
+    localStorage.removeItem(LS_RESUME_KEY);
     updateButtonState();
-  } catch (err) {
-    showError('Failed to read PDF. Try pasting your resume text manually. (' + (err.message || String(err)) + ')');
-  }
-});
-
-elErrorDismiss.addEventListener('click', hideError);
-
-elResumeCopy.addEventListener('click', () => {
-  navigator.clipboard.writeText(elResumePre.textContent).then(() => {
-    const orig = elResumeCopy.textContent;
-    elResumeCopy.textContent = 'Copied!';
-    setTimeout(() => { elResumeCopy.textContent = orig; }, 1500);
   });
-});
 
-elCoverCopy.addEventListener('click', () => {
-  navigator.clipboard.writeText(elCoverPre.textContent).then(() => {
-    const orig = elCoverCopy.textContent;
-    elCoverCopy.textContent = 'Copied!';
-    setTimeout(() => { elCoverCopy.textContent = orig; }, 1500);
+  elUploadBtn.addEventListener('click', () => elFileInput.click());
+
+  elFileInput.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    elFileInput.value = '';
+
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      const pages = [];
+
+      for (let i = 1; i <= pdf.numPages; i += 1) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        pages.push(content.items.map((item) => item.str).join(' '));
+      }
+
+      elResumeTextarea.value = pages.join('\n').trim();
+      updateButtonState();
+    } catch (error) {
+      showError(`Failed to extract text from PDF. ${error.message || ''}`.trim());
+    }
   });
-});
 
-elResumeDownload.addEventListener('click', () => downloadText(elResumePre.textContent, 'tailored-resume.txt'));
-elCoverDownload.addEventListener('click', () => downloadText(elCoverPre.textContent, 'cover-letter.txt'));
+  elErrorDismiss.addEventListener('click', hideError);
 
-elHamburger.addEventListener('click', () => elSidebar.classList.toggle('open'));
+  setupCopy(elResumeCopy, elResumePre);
+  setupCopy(elCoverCopy, elCoverPre);
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
+  elResumeDownload.addEventListener('click', () => downloadText(elResumePre.textContent, 'tailored-resume.txt'));
+  elCoverDownload.addEventListener('click', () => downloadText(elCoverPre.textContent, 'cover-letter.txt'));
 
-function init() {
-  const saved = localStorage.getItem(LS_RESUME_KEY);
-  if (saved) elResumeTextarea.value = saved;
+  elHamburger.addEventListener('click', () => {
+    const isOpen = elSidebar.classList.toggle('open');
+    elHamburger.setAttribute('aria-expanded', String(isOpen));
+  });
 
-  outputSection.style.display = 'none';
-  errorBanner.style.display = 'none';
+  elChangeKeyLink.addEventListener('click', (event) => {
+    event.preventDefault();
+    sessionStorage.removeItem(SESSION_GEMINI_KEY);
+    showKeyModal();
+  });
+
+  elModal.addEventListener('click', (event) => {
+    if (event.target === elModal) hideKeyModal();
+  });
+
+  elSaveKeyBtn.addEventListener('click', () => {
+    const key = elKeyInput.value.trim();
+    if (!key) return;
+    sessionStorage.setItem(SESSION_GEMINI_KEY, key);
+    hideKeyModal();
+    updateButtonState();
+  });
 
   elResumeTextarea.addEventListener('input', updateButtonState);
-  elJDTextarea.addEventListener('input', updateButtonState);
-  updateButtonState();
-}
+  elJdTextarea.addEventListener('input', updateButtonState);
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
+  function init() {
+    const savedResume = localStorage.getItem(LS_RESUME_KEY);
+    if (savedResume) elResumeTextarea.value = savedResume;
+    hideError();
+    elResumeCard.style.display = 'none';
+    elCoverCard.style.display = 'none';
+    elWordCount.hidden = true;
+    updateButtonState();
+  }
+
   init();
-}
+});
