@@ -358,3 +358,47 @@ body {
 
 @keyframes skeletonPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
 @keyframes generatingPulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1.0; } }
+
+/* ── API key input in sidebar ── */
+.sidebar-section--key { flex: 0 0 auto; }
+
+.sidebar-key-input {
+  width: 100%;
+  background: #0f1117;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 5px;
+  padding: 9px 12px;
+  color: #e2e2e2;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  outline: none;
+  margin-bottom: 4px;
+  box-sizing: border-box;
+}
+
+.sidebar-key-input:focus {
+  border-color: rgba(22,163,74,0.5);
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
+}
+
+.sidebar-key-input::placeholder { color: rgba(122,127,150,0.6); }
+
+.api-key-status {
+  font-size: 11px;
+  display: block;
+  min-height: 16px;
+  margin-bottom: 2px;
+}
+
+/* ── Skeleton loader ── */
+.skeleton-line { height: 13px; background: #2a2a3e; border-radius: 4px; margin-bottom: 10px; animation: skeletonPulse 1.2s ease-in-out infinite; }
+.skeleton-line:nth-child(2) { width: 85%; }
+.skeleton-line:nth-child(3) { width: 70%; }
+
+/* ── Button generating state ── */
+.btn-primary.generating { animation: generatingPulse 900ms ease-in-out infinite; }
+
+@keyframes skeletonPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+@keyframes generatingPulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1.0; } }
+
+.word-count { font-size: 12px; color: var(--text-secondary); margin-top: -12px; }
