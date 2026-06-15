@@ -4,9 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResumeAI — Instant Resume Tailoring</title>
+  <meta name="description" content="Tailor your resume and generate a cover letter for any job in seconds using AI. Free, private, and runs in your browser.">
+  <meta property="og:title" content="ResumeAI — Instant Resume Tailoring">
+  <meta property="og:description" content="Paste your resume and job description. Get an ATS-optimised resume and cover letter instantly.">
+  <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,6 +24,7 @@
       <section class="sidebar-section" aria-labelledby="resume-heading">
         <h2 class="section-label" id="resume-heading">My Resume</h2>
         <textarea id="resume-textarea" class="sidebar-textarea" placeholder="Paste your resume text here, or upload a PDF below…" spellcheck="false" aria-label="Resume text"></textarea>
+        <div id="resume-char-count" class="char-count" aria-live="polite">0 / 4000</div>
         <div class="resume-actions">
           <button id="upload-btn" class="btn btn-sm btn-secondary" type="button">Upload PDF</button>
           <input type="file" id="file-input" accept=".pdf" class="visually-hidden" tabindex="-1" aria-label="PDF file input">
@@ -29,7 +34,7 @@
       </section>
 
       <section class="sidebar-section sidebar-section--key" aria-labelledby="key-heading">
-        <h2 class="section-label" id="key-heading">Gemini API Key</h2>
+        <h2 class="section-label" id="key-heading">Groq API Key</h2>
         <input
           id="api-key-input"
           type="password"
@@ -37,7 +42,7 @@
           placeholder="Paste your gsk_… key here"
           autocomplete="off"
           spellcheck="false"
-          aria-label="Gemini API key"
+          aria-label="Groq API key"
         >
         <span id="api-key-status" class="api-key-status"></span>
         <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" class="footer-link" style="margin-top:8px;display:block;">Get a free key at console.groq.com</a>
@@ -48,6 +53,7 @@
       </footer>
     </div>
   </aside>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
 
   <main class="main" id="main-area">
     <button class="hamburger-btn" id="hamburger-btn" type="button" aria-label="Toggle sidebar" aria-expanded="false">
@@ -61,7 +67,13 @@
       </section>
 
       <div class="action-row">
-        <button id="generate-btn" class="btn btn-primary btn-generate" type="button" disabled>Tailor My Application</button>
+        <button id="generate-btn" class="btn btn-primary btn-generate" type="button" disabled>
+          <svg class="btn-generate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path>
+            <path d="M19 14l.7 1.9L21.6 16.6l-1.9.7L19 19l-.7-1.7L16.4 16.6l1.9-.7z"></path>
+          </svg>
+          <span class="btn-generate-text">Tailor My Application</span>
+        </button>
       </div>
 
       <div id="error-area" class="error-area" hidden role="alert" aria-live="assertive">
@@ -71,13 +83,42 @@
         </div>
       </div>
 
+      <div id="step-bar" class="step-bar" hidden role="status" aria-live="polite" aria-label="Generation progress">
+        <div id="step-resume" class="step">
+          <span class="step-indicator" aria-hidden="true">
+            <span class="step-dot"></span>
+            <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </span>
+          <span class="step-label">Resume</span>
+        </div>
+        <span class="step-divider" aria-hidden="true"></span>
+        <div id="step-cover" class="step">
+          <span class="step-indicator" aria-hidden="true">
+            <span class="step-dot"></span>
+            <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </span>
+          <span class="step-label">Cover Letter</span>
+        </div>
+      </div>
+
       <div id="output-area" class="output-area">
         <article id="resume-card" class="output-card" style="display:none;" aria-labelledby="resume-card-title">
           <div class="card-header">
             <h2 class="card-title" id="resume-card-title">Tailored Resume</h2>
             <div class="card-actions">
-              <button id="resume-copy" class="btn btn-sm btn-secondary" type="button">Copy</button>
-              <button id="resume-download" class="btn btn-sm btn-secondary" type="button">Download .txt</button>
+              <span id="ats-badge" class="ats-badge" hidden role="status" aria-live="polite"></span>
+              <button id="resume-copy" class="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Copy tailored resume">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span class="btn-label">Copy</span>
+              </button>
+              <button id="resume-download" class="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Download tailored resume as text file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span class="btn-label">.txt</span>
+              </button>
+              <button id="resume-pdf" class="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Download tailored resume as PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <span class="btn-label">PDF</span>
+              </button>
             </div>
           </div>
           <pre id="resume-output" class="output-pre" aria-label="Tailored resume"></pre>
@@ -87,19 +128,34 @@
           <div class="card-header">
             <h2 class="card-title" id="cover-card-title">Cover Letter</h2>
             <div class="card-actions">
-              <button id="cover-copy" class="btn btn-sm btn-secondary" type="button">Copy</button>
-              <button id="cover-download" class="btn btn-sm btn-secondary" type="button">Download .txt</button>
+              <button id="cover-copy" class="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Copy cover letter">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span class="btn-label">Copy</span>
+              </button>
+              <button id="cover-download" class="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Download cover letter as text file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span class="btn-label">.txt</span>
+              </button>
+              <button id="cover-pdf" class="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Download cover letter as PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <span class="btn-label">PDF</span>
+              </button>
             </div>
           </div>
           <pre id="cover-output" class="output-pre" aria-label="Cover letter"></pre>
         </article>
 
-        <p id="word-count" class="word-count" hidden>Word count: 0</p>
+        <p id="word-count" class="word-count" hidden></p>
       </div>
     </div>
   </main>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- TODO: add SRI hash. cdnjs (cdnjs.cloudflare.com) is blocked by this environment's network
+       egress policy, so the sha384 integrity hash for pdf.min.js@3.11.174 could not be verified.
+       An incorrect hash would block the script and break PDF upload, so it is left unsigned per
+       the project guidance. To add it: copy the SRI value from
+       https://cdnjs.com/libraries/pdf.js/3.11.174 (pdf.min.js) and set integrity="sha384-…". -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="app.js"></script>
 </body>
 </html>
