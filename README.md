@@ -69,3 +69,7 @@ After implementation changes, verify:
 ## Commenting rule
 
 Comments should explain external API contracts, secret/storage boundaries, stream parsing, PDF extraction, ATS-scoring assumptions and non-obvious export/browser behaviour. Avoid comments that merely narrate DOM assignments or CSS declarations.
+
+## Project handoff
+
+Read the [project handoff](HANDOFF.md) for current work, checks and the next step.
